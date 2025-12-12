@@ -1,0 +1,4 @@
+pandas
+confluent-kafka
+python-dotenv
+psycopg2-binary
