@@ -2,6 +2,9 @@
 """
 Quick test to verify settlement detection is working
 """
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.database.connection import get_db_connection
 
 def check_settlements():
