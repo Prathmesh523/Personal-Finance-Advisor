@@ -13,12 +13,15 @@ def create_tables():
             amount NUMERIC(10, 2) NOT NULL,
             description TEXT,
             category VARCHAR(100),
-            source VARCHAR(50),
+            source VARCHAR(50) NOT NULL,
             status VARCHAR(50) DEFAULT 'UNLINKED',
             
+            -- Linking metadata
             role VARCHAR(50),
             meta_total_bill NUMERIC(10, 2),
             link_id INTEGER,
+            match_confidence NUMERIC(3, 2),
+            match_method VARCHAR(50),
             
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -39,10 +42,13 @@ def create_tables():
         )
         """,
         
+        # Indexes for fast queries
         "CREATE INDEX IF NOT EXISTS idx_user_date ON transactions (user_id, date);",
         "CREATE INDEX IF NOT EXISTS idx_source_status ON transactions (source, status);",
         "CREATE INDEX IF NOT EXISTS idx_amount ON transactions (amount);",
-        "CREATE INDEX IF NOT EXISTS idx_session ON transactions(upload_session_id);"
+        "CREATE INDEX IF NOT EXISTS idx_session ON transactions(upload_session_id);",
+        "CREATE INDEX IF NOT EXISTS idx_category ON transactions(category);",
+        "CREATE INDEX IF NOT EXISTS idx_confidence ON transactions(match_confidence);"
     )
     
     conn = None

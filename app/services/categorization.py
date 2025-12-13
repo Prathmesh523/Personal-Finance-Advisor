@@ -106,6 +106,99 @@ def detect_settlements(user_id=1, session_id=None):
     
     return settlements_marked
 
+def auto_categorize_bank_transactions(session_id, user_id=1):
+    """
+    Auto-categorize bank transactions based on merchant keywords
+    Should be run AFTER settlement/transfer detection
+    """
+    
+    CATEGORY_KEYWORDS = {
+        'Food & Dining': [
+            'SWIGGY', 'ZOMATO', 'RESTAURANT', 'CAFE', 'KFC', 'MCDONALD', 
+            'PIZZA', 'STARBUCKS', 'DOMINOS', 'SUBWAY', 'BURGER', 'HOTEL',
+            'KITCHEN', 'CANTEEN', 'FOOD', 'DINING', 'DUNKIN', 'BASKIN'
+        ],
+        'Groceries': [
+            'INSTAMART', 'BLINKIT', 'ZEPTO', 'BIGBASKET', 'DMART', 
+            'SUPERMARKET', 'GROCERY', 'FRESH', 'VEGETABLES', 'FRUITS'
+        ],
+        'Transport': [
+            'UBER', 'OLA', 'RAPIDO', 'METRO', 'IRCTC', 'BUS', 'PETROL', 
+            'FUEL', 'TRAIN', 'FLIGHT', 'AIRLINE', 'MAKEMYTRIP', 'GOIBIBO',
+            'CAB', 'TAXI', 'AUTO'
+        ],
+        'Shopping': [
+            'AMAZON', 'FLIPKART', 'MYNTRA', 'AJIO', 'MEESHO', 'MALL',
+            'SHOP', 'STORE', 'RETAIL', 'NYKAA', 'LENSKART'
+        ],
+        'Entertainment': [
+            'NETFLIX', 'PRIME', 'HOTSTAR', 'BOOKMYSHOW', 'PVR', 'INOX',
+            'SPOTIFY', 'YOUTUBE', 'CINEMA', 'MOVIE', 'GAME', 'GAMING'
+        ],
+        'Bills & Utilities': [
+            'ELECTRICITY', 'WATER', 'GAS', 'BROADBAND', 'MOBILE', 'RECHARGE',
+            'AIRTEL', 'JIO', 'VODAFONE', 'BILL', 'TATA POWER', 'BSNL'
+        ],
+        'Health': [
+            'PHARMACY', 'MEDICINE', 'APOLLO', 'MEDPLUS', 'HOSPITAL',
+            'DOCTOR', 'CLINIC', 'HEALTH', 'MEDICAL', '1MG', 'PHARMEASY'
+        ],
+        'Investment':[
+            'GROWW', 'ZERODHA', 'ANGEL ONE', 'UPSTOX'
+        ]
+    }
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    print("\n🏷️  Auto-Categorizing Bank Transactions...")
+    
+    total_categorized = 0
+    
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        for keyword in keywords:
+            cur.execute("""
+                UPDATE transactions
+                SET category = %s
+                WHERE upload_session_id = %s
+                  AND user_id = %s
+                  AND source = 'BANK'
+                  AND (category IS NULL OR category = 'Uncategorized')
+                  AND status != 'TRANSFER'
+                  AND UPPER(description) LIKE %s
+            """, (category, session_id, user_id, f'%{keyword}%'))
+            
+            count = cur.rowcount
+            if count > 0:
+                total_categorized += count
+                print(f"   ✓ {count} → '{category}' (keyword: {keyword})")
+            
+            conn.commit()
+    
+    # Set remaining as 'Other'
+    cur.execute("""
+        UPDATE transactions
+        SET category = 'Other'
+        WHERE upload_session_id = %s
+          AND user_id = %s
+          AND source = 'BANK'
+          AND (category IS NULL OR category = 'Uncategorized')
+          AND status != 'TRANSFER'
+    """, (session_id, user_id))
+
+    other_count = cur.rowcount
+    if other_count > 0:
+        print(f"   ℹ️  {other_count} → 'Other' (no keyword match)")
+        total_categorized += other_count
+    
+    conn.commit()
+    
+    print(f"\n✅ Auto-Categorization Complete. Categorized {total_categorized} transactions.")
+    
+    cur.close()
+    conn.close()
+    
+    return total_categorized
 
 def find_best_settlement_match(split_desc, bank_candidates):
     """

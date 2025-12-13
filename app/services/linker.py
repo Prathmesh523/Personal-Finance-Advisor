@@ -16,27 +16,49 @@ def calculate_similarity(bank_desc, split_desc):
         
     return SequenceMatcher(None, b_clean, s_clean).ratio()
 
-def pick_best_candidate(s_desc, candidates, threshold=0.0):
+def pick_best_candidate(s_desc, candidates, threshold=0.0, return_score=False):
+    """Pick best match with optional score return"""
     best_id = None
     highest_score = -1.0
     
     for c in candidates:
-        # Correctly unpacks 3 values now
-        c_id, c_date, c_desc = c 
+        c_id, c_date, c_desc = c
         score = calculate_similarity(c_desc, s_desc)
         
         if score > highest_score:
             highest_score = score
             best_id = c_id
-            
+    
     if highest_score >= threshold:
+        if return_score:
+            return best_id, highest_score
         return best_id
+    
+    if return_score:
+        return None, 0.0
     return None
 
-def link_transactions(cur, split_id, bank_id, method):
-    cur.execute("UPDATE transactions SET status='LINKED', link_id=%s WHERE id=%s", (bank_id, split_id))
-    cur.execute("UPDATE transactions SET status='LINKED', link_id=%s WHERE id=%s", (split_id, bank_id))
-    print(f"   🔗 LINKED! Split {split_id} <-> Bank {bank_id} [{method}]")
+def link_transactions(cur, split_id, bank_id, method, confidence):
+    """Link two transactions with confidence tracking"""
+    cur.execute("""
+        UPDATE transactions 
+        SET status = 'LINKED', 
+            link_id = %s,
+            match_confidence = %s,
+            match_method = %s
+        WHERE id = %s
+    """, (bank_id, confidence, method, split_id))
+    
+    cur.execute("""
+        UPDATE transactions 
+        SET status = 'LINKED', 
+            link_id = %s,
+            match_confidence = %s,
+            match_method = %s
+        WHERE id = %s
+    """, (split_id, confidence, method, bank_id))
+    
+    print(f"   🔗 LINKED! Split {split_id} <-> Bank {bank_id} [{method}] ({confidence:.0%})")
 
 def run_linker(user_id=1, session_id=None):  # NEW parameter
     """Add WHERE upload_session_id = session_id to all queries"""
@@ -84,13 +106,15 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
         
         if len(candidates) == 1:
             b_id, b_date, b_desc = candidates[0]
-            link_transactions(cur, s_id, b_id, "Pass 1: Perfect")
+            confidence = 1.00  # Perfect: exact amount, same day, single match
+            link_transactions(cur, s_id, b_id, "Pass 1: Exact Match", confidence)
             links_made += 1
-            conn.commit() 
+            conn.commit()
         elif len(candidates) > 1:
-            best_id = pick_best_candidate(s_desc, candidates)
+            best_id, similarity_score = pick_best_candidate(s_desc, candidates, return_score=True)
             if best_id:
-                link_transactions(cur, s_id, best_id, "Pass 1: Tie-Break")
+                confidence = 0.90 + (similarity_score * 0.10)  # 0.90-1.00 based on text match
+                link_transactions(cur, s_id, best_id, "Pass 1: Tie-Break", confidence)
                 links_made += 1
                 conn.commit()
             else:
@@ -118,10 +142,12 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
         
         candidates = cur.fetchall()
         
-        best_id = pick_best_candidate(s_desc, candidates, threshold=0.3)
-        
+        best_id, similarity_score = pick_best_candidate(s_desc, candidates, threshold=0.3, return_score=True)
+
         if best_id:
-            link_transactions(cur, s_id, best_id, "Pass 2: Fuzzy Date")
+            # Confidence: 0.70-0.85 based on text similarity
+            confidence = 0.70 + (similarity_score * 0.15)
+            link_transactions(cur, s_id, best_id, "Pass 2: Fuzzy Date", confidence)
             links_made += 1
             conn.commit()
         else:
@@ -149,7 +175,9 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
             b_id, b_date, b_desc = candidates[0]
             score = calculate_similarity(s_desc, b_desc)
             if score > 0.15:
-                link_transactions(cur, s_id, b_id, "Pass 3: Blind Trust")
+                # Confidence: 0.60-0.75 based on text similarity
+                confidence = 0.60 + (score * 0.15)
+                link_transactions(cur, s_id, b_id, "Pass 3: Blind Trust", confidence)
                 links_made += 1
                 conn.commit()
 
@@ -157,11 +185,13 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
     cur.close()
     conn.close()
 
-def run_full_pipeline(session_id, user_id=1):  # NEW parameter
-    """
-    Complete pipeline for specific upload session
-    """
-    from app.services.categorization import detect_settlements, detect_other_transfers
+def run_full_pipeline(session_id, user_id=1):
+    """Complete pipeline for specific upload session"""
+    from app.services.categorization import (
+        detect_settlements, 
+        detect_other_transfers,
+        auto_categorize_bank_transactions  # NEW
+    )
     
     print("=" * 60)
     print("🚀 RUNNING FULL FINANCIAL ANALYSIS PIPELINE")
@@ -172,6 +202,7 @@ def run_full_pipeline(session_id, user_id=1):  # NEW parameter
     settlements = detect_settlements(user_id, session_id)
     run_linker(user_id, session_id)
     other_transfers = detect_other_transfers(user_id, session_id)
+    auto_categorize_bank_transactions(session_id, user_id)  # NEW
     
     # Mark session complete
     from app.services.session_manager import mark_session_complete
@@ -180,6 +211,3 @@ def run_full_pipeline(session_id, user_id=1):  # NEW parameter
     print("\n" + "=" * 60)
     print("✅ PIPELINE COMPLETE")
     print("=" * 60)
-
-if __name__ == "__main__":
-    run_full_pipeline()
