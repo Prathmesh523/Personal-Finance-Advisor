@@ -157,11 +157,11 @@ def list_sessions():
 if __name__ == "__main__":
     if len(sys.argv) == 1:
         print("\n💡 Usage:")
-        print("   python view_linked_transactions.py <session_id>")
-        print("   python view_linked_transactions.py --list-sessions")
+        print("   python scripts/view_linked_transactions.py <session_id>")
+        print("   python scripts/view_linked_transactions.py --list-sessions")
         print("\nExamples:")
-        print("   python view_linked_transactions.py session_abc123def456")
-        print("   python view_linked_transactions.py --list-sessions")
+        print("   python scripts/view_linked_transactions.py session_abc123def456")
+        print("   python scripts/view_linked_transactions.py --list-sessions")
         sys.exit(0)
     
     if sys.argv[1] == "--list-sessions":

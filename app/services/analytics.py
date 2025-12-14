@@ -314,7 +314,7 @@ def get_unlinked_splitwise_payer(session_id, user_id=1):
             date,
             description,
             meta_total_bill as total_bill,
-            ABS(amount) as amount_owed_to_you,
+            ABS(amount) as your_actual_share,
             category
         FROM transactions
         WHERE upload_session_id = %s
@@ -333,15 +333,23 @@ def get_unlinked_splitwise_payer(session_id, user_id=1):
     total_amount = 0
     
     for row in results:
-        date, desc, total_bill, owed, category = row
+        date, desc, total_bill, your_actual_share, category = row
+        total_bill = float(total_bill) if total_bill else 0
+        your_actual_share = float(your_actual_share)
+        
+        # What friends owe you = total - your share
+        # If you paid ₹170 and your share is ₹0, they owe ₹170
+        owed_to_you = total_bill - your_actual_share
+        
         unlinked.append({
             'date': date,
             'description': desc,
-            'total_bill': float(total_bill) if total_bill else 0,
-            'owed_to_you': float(owed),
+            'total_bill': total_bill,
+            'your_share': your_actual_share,  # ✅ What you actually consumed
+            'owed_to_you': owed_to_you,      # ✅ What they owe you
             'category': category
         })
-        total_amount += float(total_bill) if total_bill else 0
+        total_amount += total_bill
     
     return {
         'count': len(unlinked),

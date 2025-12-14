@@ -2,3 +2,6 @@ pandas
 confluent-kafka
 python-dotenv
 psycopg2-binary
+fastapi
+uvicorn[standard]
+python-multipart

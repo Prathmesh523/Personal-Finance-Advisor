@@ -11,6 +11,4 @@ class Config:
     UPLOAD_SESSION_PREFIX = "session_"
     
     # Date Formats
-    DATE_FORMAT_BANK = "%d/%m/%y"      # Matches "01/10/25"
-    DATE_FORMAT_SPLITWISE = "%Y-%m-%d" # Matches "2024-09-24"
     DATE_FORMAT_DB = "%Y-%m-%d"        # Standard ISO format for Postgres
