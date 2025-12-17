@@ -438,3 +438,163 @@ def get_session_status(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/sessions/{session_id}/daily-spending")
+def get_daily_spending(session_id: str):
+    """
+    Get spending aggregated by day
+    Returns daily totals for chart visualization
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify session exists
+        cur.execute("SELECT id FROM upload_sessions WHERE id = %s", (session_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get daily spending (expenses only, exclude transfers)
+        cur.execute("""
+            SELECT 
+                date,
+                SUM(ABS(amount)) as total_spent,
+                COUNT(*) as transaction_count
+            FROM transactions
+            WHERE upload_session_id = %s
+              AND amount < 0
+              AND status != 'TRANSFER'
+            GROUP BY date
+            ORDER BY date ASC
+        """, (session_id,))
+        
+        daily_data = []
+        for row in cur.fetchall():
+            daily_data.append({
+                'date': row[0].isoformat(),
+                'amount': float(row[1]),
+                'count': row[2]
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return {
+            'daily_spending': daily_data,
+            'total_days': len(daily_data)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/sessions/{session_id}/transactions/grouped")
+def get_grouped_transactions(
+    session_id: str,
+    source: Optional[str] = Query(None, description="Filter by source (BANK or SPLITWISE)"),
+    status: Optional[str] = Query(None, description="Filter by status (LINKED, UNLINKED, TRANSFER)"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Items per page")
+):
+    """
+    Get transactions grouped by date
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify session exists
+        cur.execute("SELECT id FROM upload_sessions WHERE id = %s", (session_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Build query with filters
+        where_clauses = ["upload_session_id = %s"]
+        params = [session_id]
+        
+        if source:
+            where_clauses.append("source = %s")
+            params.append(source)
+        
+        if status:
+            where_clauses.append("status = %s")
+            params.append(status)
+        
+        if category:
+            where_clauses.append("category = %s")
+            params.append(category)
+        
+        where_clause = " AND ".join(where_clauses)
+        
+        # Get all transactions for grouping
+        cur.execute(f"""
+            SELECT 
+                id, date, description, amount, category, 
+                source, status, link_id, match_confidence, match_method
+            FROM transactions
+            WHERE {where_clause}
+            ORDER BY date DESC, id DESC
+        """, params)
+        
+        all_transactions = cur.fetchall()
+        
+        # Group by date
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        
+        for row in all_transactions:
+            date_str = row[1].isoformat()
+            grouped[date_str].append({
+                'id': row[0],
+                'date': date_str,
+                'description': row[2],
+                'amount': float(row[3]),
+                'category': row[4],
+                'source': row[5],
+                'status': row[6],
+                'link_id': row[7],
+                'match_confidence': float(row[8]) if row[8] else None,
+                'match_method': row[9]
+            })
+        
+        # Convert to list of groups
+        groups = []
+        for date_str, transactions in grouped.items():
+            total_amount = sum(t['amount'] for t in transactions)
+            groups.append({
+                'date': date_str,
+                'transactions': transactions,
+                'total_amount': total_amount,
+                'count': len(transactions)
+            })
+        
+        # Sort by date descending
+        groups.sort(key=lambda x: x['date'], reverse=True)
+        
+        # Pagination
+        total_groups = len(groups)
+        total_pages = math.ceil(total_groups / limit) if total_groups > 0 else 1
+        offset = (page - 1) * limit
+        paginated_groups = groups[offset:offset + limit]
+        
+        cur.close()
+        conn.close()
+        
+        return {
+            'groups': paginated_groups,
+            'total': total_groups,
+            'page': page,
+            'limit': limit,
+            'total_pages': total_pages
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

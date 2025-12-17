@@ -15,20 +15,59 @@ def clean_float(value):
         return 0.0
 
 def clean_description(raw_desc):
-    clean = raw_desc.upper()
-    for noise in ['UPI-', 'POS-', 'IMPS-', 'NEFT-', 'RTGS-']:
-        clean = clean.replace(noise, '')
-    parts = clean.split('-')
-    if len(parts) > 1:
-        return parts[1].strip()[:100]
-    return clean.strip()[:100]
+    """
+    Extract meaningful info from bank narration
+    Priority: Merchant name > Person name > UPI handle
+    """
+    clean = raw_desc.strip()
+    
+    # Remove payment type prefixes
+    for prefix in ['UPI-', 'POS-', 'IMPS-', 'NEFT-', 'RTGS-', 'DEBIT CARD-']:
+        if clean.startswith(prefix):
+            clean = clean[len(prefix):]
+            break
+    
+    # Split by common separators
+    parts = [p.strip() for p in clean.split('-') if p.strip()]
+    
+    if not parts:
+        return raw_desc[:100]
+    
+    # Filter out garbage patterns
+    filtered = []
+    for part in parts:
+        # Skip UPI handles, transaction IDs, bank codes
+        if any([
+            '@' in part and len(part) < 30,  # UPI handle
+            part.isdigit() and len(part) > 6,  # Transaction ID
+            'SBIN' in part or 'YESB' in part or 'ICIC' in part,  # Bank codes
+            part.upper() in ['PAYMENT FROM PHONE', 'UPI', 'PAYMENT'],  # Generic words
+        ]):
+            continue
+        filtered.append(part)
+    
+    # Return first meaningful part (usually merchant/person name)
+    if filtered:
+        return filtered[0][:100]
+    
+    # Fallback: return first part
+    return parts[0][:100]
 
 def parse_date_smart(date_str):
-    """Parse date in any common format"""
+    """Parse date with explicit format"""
     try:
-        return pd.to_datetime(date_str, dayfirst=True)
+        # Bank format: YYYY-MM-DD (ISO format)
+        return pd.to_datetime(date_str, format='%Y-%m-%d')
     except:
-        return None
+        try:
+            # Splitwise also uses YYYY-MM-DD
+            return pd.to_datetime(date_str, format='%Y-%m-%d')
+        except:
+            # Last resort: no dayfirst
+            try:
+                return pd.to_datetime(date_str)
+            except:
+                return None
 
 def normalize_bank_row(row, user_id=1):
     try:

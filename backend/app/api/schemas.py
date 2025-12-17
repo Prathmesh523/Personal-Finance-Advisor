@@ -105,3 +105,34 @@ class SessionStatus(BaseModel):
     progress: Dict
     created_at: datetime
     error_message: Optional[str] = None
+
+# ============================================================================
+# DAILY SPENDING SCHEMAS
+# ============================================================================
+
+class DailySpendingItem(BaseModel):
+    date: str
+    amount: float
+    count: int
+
+class DailySpendingResponse(BaseModel):
+    daily_spending: List[DailySpendingItem]
+    total_days: int
+
+
+# ============================================================================
+# GROUPED TRANSACTIONS SCHEMAS
+# ============================================================================
+
+class TransactionGroup(BaseModel):
+    date: str
+    transactions: List[Transaction]
+    total_amount: float
+    count: int
+
+class GroupedTransactionsResponse(BaseModel):
+    groups: List[TransactionGroup]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
