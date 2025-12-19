@@ -132,3 +132,47 @@ export interface GroupedTransactionsResponse {
   limit: number;
   total_pages: number;
 }
+
+// Comparison types
+export interface AvailableSession {
+  session_id: string;
+  month: string;
+  status: string;
+  transaction_count: number;
+  created_at: string;
+}
+
+export interface AvailableSessionsResponse {
+  sessions: AvailableSession[];
+  count: number;
+}
+
+export interface MetricComparison {
+  session1_value: number;
+  session2_value: number;
+  difference: number;
+  percentage_change: number;
+}
+
+export interface CategoryComparison {
+  category: string;
+  session1_amount: number;
+  session2_amount: number;
+  difference: number;
+  percentage_change: number;
+}
+
+export interface ComparisonResponse {
+  session1_id: string;
+  session1_month: string;
+  session2_id: string;
+  session2_month: string;
+  net_consumption: MetricComparison;
+  cash_outflow: MetricComparison;
+  monthly_float: MetricComparison;
+  category_comparison: CategoryComparison[];
+  session1_daily_avg: number;
+  session2_daily_avg: number;
+  top_increases: CategoryComparison[];
+  top_decreases: CategoryComparison[];
+}

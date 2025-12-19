@@ -9,7 +9,9 @@ import {
   UploadResponse,
   Warnings,
   DailySpendingResponse,
-  GroupedTransactionsResponse
+  GroupedTransactionsResponse,
+  AvailableSessionsResponse,
+  ComparisonResponse
 } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
@@ -129,4 +131,10 @@ export const api = {
     );
   },
 
+  // Comparison
+  getAvailableSessions: () =>
+    fetchAPI<AvailableSessionsResponse>('/sessions/available'),
+
+  compareSessions: (session1: string, session2: string) =>
+    fetchAPI<ComparisonResponse>(`/compare?session1=${session1}&session2=${session2}`),
 };

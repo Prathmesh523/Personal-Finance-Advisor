@@ -150,3 +150,49 @@ class UploadResponseWithConfig(BaseModel):
     message: str
     selected_month: str
     config: Optional[UploadConfig] = None
+    
+# ============================================================================
+# COMPARISON SCHEMAS
+# ============================================================================
+
+class AvailableSession(BaseModel):
+    session_id: str
+    month: str
+    status: str
+    transaction_count: int
+    created_at: str
+
+class AvailableSessionsResponse(BaseModel):
+    sessions: List[AvailableSession]
+    count: int
+
+class MetricComparison(BaseModel):
+    session1_value: float
+    session2_value: float
+    difference: float
+    percentage_change: float
+
+class CategoryComparison(BaseModel):
+    category: str
+    session1_amount: float
+    session2_amount: float
+    difference: float
+    percentage_change: float
+
+class ComparisonResponse(BaseModel):
+    session1_id: str
+    session1_month: str
+    session2_id: str
+    session2_month: str
+    
+    net_consumption: MetricComparison
+    cash_outflow: MetricComparison
+    monthly_float: MetricComparison
+    
+    category_comparison: List[CategoryComparison]
+    
+    session1_daily_avg: float
+    session2_daily_avg: float
+    
+    top_increases: List[CategoryComparison]
+    top_decreases: List[CategoryComparison]

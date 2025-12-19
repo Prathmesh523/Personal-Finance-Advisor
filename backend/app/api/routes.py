@@ -6,7 +6,10 @@ from app.api.schemas import (
     CategoryResponse, CategoryItem,
     TransactionListResponse, Transaction,
     WarningsResponse,
-    UploadResponse, SessionStatus  # NEW
+    UploadResponse, SessionStatus,
+    AvailableSessionsResponse, ComparisonResponse,
+    MetricComparison, CategoryComparison
+
 )
 from app.api.upload_handler import save_uploaded_file, start_analysis_thread  # NEW
 from app.services.analytics import (
@@ -51,6 +54,81 @@ def test_database():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+# ============================================================================
+# UPLOAD ENDPOINT
+# ============================================================================
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_files(
+    bank_file: UploadFile = File(..., description="Bank statement CSV"),
+    splitwise_file: UploadFile = File(..., description="Splitwise export CSV"),
+    month: int = Form(..., ge=1, le=12, description="Month (1-12)"),
+    year: int = Form(..., ge=2020, le=2030, description="Year"),
+    family_members: Optional[str] = Form(None, description="Comma-separated family names"),
+    monthly_rent: Optional[float] = Form(None, description="Monthly rent amount")
+):
+    """
+    Upload bank and splitwise CSV files for analysis
+    """
+    try:
+        # Validate file types
+        if not bank_file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Bank file must be CSV")
+        if not splitwise_file.filename.endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Splitwise file must be CSV")
+        
+        # Parse config
+        config = {}
+        if family_members:
+            # Split by comma and clean whitespace
+            config['family_members'] = [name.strip() for name in family_members.split(',') if name.strip()]
+        if monthly_rent:
+            config['monthly_rent'] = monthly_rent
+        
+        # Create upload session with config
+        from app.services.session_manager import create_upload_session, check_duplicate_session
+        
+        month_str = f"{year}-{month:02d}"
+        
+        # Check for duplicates
+        duplicate = check_duplicate_session(user_id=1, selected_month=month_str)
+        if duplicate['exists']:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Month {month_str} already analyzed. Session ID: {duplicate['session_id']}"
+            )
+        
+        # Create new session with config
+        session_info = create_upload_session(
+            user_id=1,
+            selected_month=month,
+            selected_year=year,
+            config=config  # NEW
+        )
+        
+        session_id = session_info['session_id']
+        start_date = session_info['start_date']
+        end_date = session_info['end_date']
+        
+        # Save uploaded files
+        bank_filepath = save_uploaded_file(bank_file, session_id, 'bank')
+        splitwise_filepath = save_uploaded_file(splitwise_file, session_id, 'splitwise')
+        
+        # Start analysis in background thread
+        start_analysis_thread(session_id, bank_filepath, splitwise_filepath, start_date, end_date)
+        
+        return UploadResponse(
+            session_id=session_id,
+            status="processing",
+            message="Analysis started. Check status endpoint for progress.",
+            selected_month=month_str
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================================
 # NEW ENDPOINTS
@@ -304,81 +382,6 @@ def get_session_warnings(session_id: str):
         raise HTTPException(status_code=500, detail=str(e))
     
 # ============================================================================
-# UPLOAD ENDPOINT
-# ============================================================================
-
-@router.post("/upload", response_model=UploadResponse)
-async def upload_files(
-    bank_file: UploadFile = File(..., description="Bank statement CSV"),
-    splitwise_file: UploadFile = File(..., description="Splitwise export CSV"),
-    month: int = Form(..., ge=1, le=12, description="Month (1-12)"),
-    year: int = Form(..., ge=2020, le=2030, description="Year"),
-    family_members: Optional[str] = Form(None, description="Comma-separated family names"),
-    monthly_rent: Optional[float] = Form(None, description="Monthly rent amount")
-):
-    """
-    Upload bank and splitwise CSV files for analysis
-    """
-    try:
-        # Validate file types
-        if not bank_file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Bank file must be CSV")
-        if not splitwise_file.filename.endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Splitwise file must be CSV")
-        
-        # Parse config
-        config = {}
-        if family_members:
-            # Split by comma and clean whitespace
-            config['family_members'] = [name.strip() for name in family_members.split(',') if name.strip()]
-        if monthly_rent:
-            config['monthly_rent'] = monthly_rent
-        
-        # Create upload session with config
-        from app.services.session_manager import create_upload_session, check_duplicate_session
-        
-        month_str = f"{year}-{month:02d}"
-        
-        # Check for duplicates
-        duplicate = check_duplicate_session(user_id=1, selected_month=month_str)
-        if duplicate['exists']:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Month {month_str} already analyzed. Session ID: {duplicate['session_id']}"
-            )
-        
-        # Create new session with config
-        session_info = create_upload_session(
-            user_id=1,
-            selected_month=month,
-            selected_year=year,
-            config=config  # NEW
-        )
-        
-        session_id = session_info['session_id']
-        start_date = session_info['start_date']
-        end_date = session_info['end_date']
-        
-        # Save uploaded files
-        bank_filepath = save_uploaded_file(bank_file, session_id, 'bank')
-        splitwise_filepath = save_uploaded_file(splitwise_file, session_id, 'splitwise')
-        
-        # Start analysis in background thread
-        start_analysis_thread(session_id, bank_filepath, splitwise_filepath, start_date, end_date)
-        
-        return UploadResponse(
-            session_id=session_id,
-            status="processing",
-            message="Analysis started. Check status endpoint for progress.",
-            selected_month=month_str
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ============================================================================
 # STATUS ENDPOINT
 # ============================================================================
 
@@ -600,6 +603,186 @@ def get_grouped_transactions(
             'page': page,
             'limit': limit,
             'total_pages': total_pages
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/available", response_model=AvailableSessionsResponse)
+def get_available_sessions():
+    """
+    Get list of all completed sessions for comparison
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                id,
+                selected_month,
+                status,
+                bank_count + splitwise_count as total_txns,
+                created_at
+            FROM upload_sessions
+            WHERE status = 'completed'
+            ORDER BY selected_month DESC
+        """)
+        
+        sessions = []
+        for row in cur.fetchall():
+            sessions.append({
+                'session_id': row[0],
+                'month': row[1],
+                'status': row[2],
+                'transaction_count': row[3],
+                'created_at': row[4].isoformat()
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return {'sessions': sessions, 'count': len(sessions)}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/compare", response_model=ComparisonResponse)
+def compare_sessions(
+    session1: str = Query(..., description="First session ID"),
+    session2: str = Query(..., description="Second session ID")
+):
+    """
+    Compare two analysis sessions
+    """
+    try:
+        # Validate: sessions exist and are different
+        if session1 == session2:
+            raise HTTPException(status_code=400, detail="Cannot compare same session")
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify both sessions exist and get months
+        cur.execute("""
+            SELECT id, selected_month 
+            FROM upload_sessions 
+            WHERE id IN (%s, %s)
+        """, (session1, session2))
+        
+        results = cur.fetchall()
+        if len(results) != 2:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="One or both sessions not found")
+        
+        session_months = {row[0]: row[1] for row in results}
+        
+        # Get metrics for both sessions
+        from app.services.analytics import get_monthly_metrics
+        
+        metrics1 = get_monthly_metrics(session1)
+        metrics2 = get_monthly_metrics(session2)
+        
+        # Calculate metric comparisons
+        def calc_comparison(val1, val2):
+            diff = val2 - val1
+            pct = (diff / val1 * 100) if val1 != 0 else (100 if val2 > 0 else 0)
+            return {
+                'session1_value': val1,
+                'session2_value': val2,
+                'difference': diff,
+                'percentage_change': round(pct, 1)
+            }
+        
+        net_consumption_comp = calc_comparison(
+            metrics1['net_consumption']['total'],
+            metrics2['net_consumption']['total']
+        )
+        
+        cash_outflow_comp = calc_comparison(
+            metrics1['cash_outflow'],
+            metrics2['cash_outflow']
+        )
+        
+        float_comp = calc_comparison(
+            metrics1['monthly_float'],
+            metrics2['monthly_float']
+        )
+        
+        # Category comparison
+        cats1 = {cat['category']: cat['amount'] for cat in metrics1['category_breakdown']}
+        cats2 = {cat['category']: cat['amount'] for cat in metrics2['category_breakdown']}
+        
+        all_categories = set(cats1.keys()) | set(cats2.keys())
+        
+        category_comparison = []
+        for cat in all_categories:
+            amt1 = cats1.get(cat, 0)
+            amt2 = cats2.get(cat, 0)
+            diff = amt2 - amt1
+            pct = (diff / amt1 * 100) if amt1 != 0 else (100 if amt2 > 0 else 0)
+            
+            category_comparison.append({
+                'category': cat,
+                'session1_amount': amt1,
+                'session2_amount': amt2,
+                'difference': diff,
+                'percentage_change': round(pct, 1)
+            })
+        
+        # Sort by absolute difference
+        category_comparison.sort(key=lambda x: abs(x['difference']), reverse=True)
+        
+        # Top increases and decreases
+        increases = [c for c in category_comparison if c['difference'] > 0]
+        decreases = [c for c in category_comparison if c['difference'] < 0]
+        
+        increases.sort(key=lambda x: x['difference'], reverse=True)
+        decreases.sort(key=lambda x: x['difference'])
+        
+        # Daily averages
+        cur.execute("""
+            SELECT COUNT(DISTINCT date)
+            FROM transactions
+            WHERE upload_session_id = %s
+              AND amount < 0
+              AND status != 'TRANSFER'
+        """, (session1,))
+        days1 = cur.fetchone()[0] or 1
+        
+        cur.execute("""
+            SELECT COUNT(DISTINCT date)
+            FROM transactions
+            WHERE upload_session_id = %s
+              AND amount < 0
+              AND status != 'TRANSFER'
+        """, (session2,))
+        days2 = cur.fetchone()[0] or 1
+        
+        daily_avg1 = metrics1['net_consumption']['total'] / days1
+        daily_avg2 = metrics2['net_consumption']['total'] / days2
+        
+        cur.close()
+        conn.close()
+        
+        return {
+            'session1_id': session1,
+            'session1_month': session_months[session1],
+            'session2_id': session2,
+            'session2_month': session_months[session2],
+            'net_consumption': net_consumption_comp,
+            'cash_outflow': cash_outflow_comp,
+            'monthly_float': float_comp,
+            'category_comparison': category_comparison,
+            'session1_daily_avg': round(daily_avg1, 2),
+            'session2_daily_avg': round(daily_avg2, 2),
+            'top_increases': increases[:5],
+            'top_decreases': decreases[:5]
         }
         
     except HTTPException:
