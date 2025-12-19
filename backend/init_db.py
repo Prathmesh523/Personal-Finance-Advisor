@@ -38,6 +38,7 @@ def create_tables():
             bank_count INTEGER DEFAULT 0,
             splitwise_count INTEGER DEFAULT 0,
             excluded_count INTEGER DEFAULT 0,
+            user_config JSONB,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """,

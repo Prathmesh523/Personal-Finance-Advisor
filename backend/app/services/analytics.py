@@ -147,6 +147,15 @@ def get_category_breakdown(session_id, user_id=1):
     conn = get_db_connection()
     cur = conn.cursor()
     
+    # Category normalization map - merge similar categories
+    CATEGORY_MAPPING = {
+        'General': 'Other',
+        'Uncategorized': 'Other',
+        'Gas/fuel': 'Transport',
+        'Bus/train': 'Transport',
+        'Utilities - Other': 'Bills & Utilities',
+    }
+    
     category_totals = {}
     
     # 1. Solo expenses (unlinked bank) - use bank category
@@ -158,15 +167,20 @@ def get_category_breakdown(session_id, user_id=1):
         WHERE upload_session_id = %s
           AND user_id = %s
           AND source = 'BANK'
-          AND amount < 0  -- ✅ ONLY EXPENSES (negative)
+          AND amount < 0
           AND status = 'UNLINKED'
           AND category NOT IN ('Settlement', 'Investment', 'Credit Card', 'Savings', 'Self Transfer')
         GROUP BY category
     """, (session_id, user_id))
     
     for row in cur.fetchall():
-        category = row[0] or 'Other'
-        category_totals[category] = category_totals.get(category, 0) + float(row[1])
+        raw_category = row[0] or 'Other'
+        # Apply mapping
+        category = CATEGORY_MAPPING.get(raw_category, raw_category)
+        amount = float(row[1])
+        
+        # Merge into totals
+        category_totals[category] = category_totals.get(category, 0) + amount
     
     # 2. Split expenses (you paid) - use Splitwise category with YOUR SHARE
     cur.execute("""
@@ -183,8 +197,12 @@ def get_category_breakdown(session_id, user_id=1):
     """, (session_id, user_id))
     
     for row in cur.fetchall():
-        category = row[0] or 'Other'
+        raw_category = row[0] or 'Other'
+        # Apply mapping
+        category = CATEGORY_MAPPING.get(raw_category, raw_category)
         your_share = float(row[1])
+        
+        # Merge into totals
         category_totals[category] = category_totals.get(category, 0) + your_share
     
     # 3. Split expenses (friend paid) - use Splitwise category
@@ -201,9 +219,13 @@ def get_category_breakdown(session_id, user_id=1):
     """, (session_id, user_id))
     
     for row in cur.fetchall():
-        category = row[0] or 'Other'
-        category = CATEGORY_MAPPING.get(category, category)
-        category_totals[category] = category_totals.get(category, 0) + float(row[1])
+        raw_category = row[0] or 'Other'
+        # Apply mapping
+        category = CATEGORY_MAPPING.get(raw_category, raw_category)
+        amount = float(row[1])
+        
+        # Merge into totals
+        category_totals[category] = category_totals.get(category, 0) + amount
     
     cur.close()
     conn.close()
@@ -214,7 +236,7 @@ def get_category_breakdown(session_id, user_id=1):
     if total_spending == 0:
         return []
     
-    # Convert to list and sort
+    # Convert to list and calculate percentages
     breakdown = []
     for category, amount in category_totals.items():
         percentage = (amount / total_spending * 100) if total_spending > 0 else 0

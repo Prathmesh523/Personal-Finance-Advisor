@@ -6,10 +6,19 @@ import { useRouter, usePathname } from 'next/navigation';
 import { storage } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, Receipt, GitCompare, Upload } from 'lucide-react';
+import { useEffect, useState } from 'react'; // ✅ ADD THIS
 
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  
+  // ✅ FIX: Use state to avoid hydration mismatch
+  const [hasSession, setHasSession] = useState(false);
+
+  // ✅ FIX: Check session only on client side
+  useEffect(() => {
+    setHasSession(storage.getSessionId() !== null);
+  }, []);
 
   const handleNewAnalysis = () => {
     if (confirm('Start a new analysis? This will clear the current session.')) {
@@ -19,8 +28,6 @@ export function Sidebar() {
   };
 
   const isActive = (path: string) => pathname === path;
-
-  const hasSession = storage.getSessionId() !== null;
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },

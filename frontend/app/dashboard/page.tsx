@@ -6,18 +6,21 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { storage } from '@/lib/storage';
+import { formatMonth } from '@/lib/utils';
 import { Metrics, CategoryBreakdown, Warnings, DailySpendingResponse } from '@/types';
 import { MetricCard } from '@/components/MetricCard';
 import { CategoryChart } from '@/components/CategoryChart';
 import { DailySpendingChart } from '@/components/DailySpendingChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Calendar } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
+  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown | null>(null);
   const [warnings, setWarnings] = useState<Warnings | null>(null);
@@ -39,17 +42,19 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      const [metricsData, categoriesData, warningsData, dailyData] = await Promise.all([
+      const [metricsData, categoriesData, warningsData, dailyData, statusData] = await Promise.all([
         api.getMetrics(sessionId),
         api.getCategories(sessionId),
         api.getWarnings(sessionId),
         api.getDailySpending(sessionId),
+        api.getSessionStatus(sessionId),
       ]);
 
       setMetrics(metricsData);
       setCategories(categoriesData);
       setWarnings(warningsData);
       setDailySpending(dailyData);
+      setSessionMonth(statusData.selected_month);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
       console.error('Dashboard error:', err);
@@ -112,8 +117,23 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-2">Your financial overview</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
+              <p className="text-gray-600 mt-2">Your financial overview</p>
+            </div>
+            {sessionMonth && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <div>
+                  <p className="text-xs text-gray-600">Analysis Period</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {formatMonth(sessionMonth)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Metrics Cards */}
@@ -136,16 +156,16 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Daily Spending Chart */}
-          {dailySpending && dailySpending.daily_spending.length > 0 && (
-            <DailySpendingChart data={dailySpending.daily_spending} />
-          )}
-
-          {/* Category Chart */}
+        {/* Charts - Stacked Vertically */}
+        <div className="space-y-6 mb-8">
+          {/* Category Chart - Full Width */}
           {categories.categories.length > 0 && (
             <CategoryChart categories={categories.categories} />
+          )}
+
+          {/* Daily Spending Chart - Full Width */}
+          {dailySpending && dailySpending.daily_spending.length > 0 && (
+            <DailySpendingChart data={dailySpending.daily_spending} />
           )}
         </div>
 

@@ -312,12 +312,12 @@ async def upload_files(
     bank_file: UploadFile = File(..., description="Bank statement CSV"),
     splitwise_file: UploadFile = File(..., description="Splitwise export CSV"),
     month: int = Form(..., ge=1, le=12, description="Month (1-12)"),
-    year: int = Form(..., ge=2020, le=2030, description="Year")
+    year: int = Form(..., ge=2020, le=2030, description="Year"),
+    family_members: Optional[str] = Form(None, description="Comma-separated family names"),
+    monthly_rent: Optional[float] = Form(None, description="Monthly rent amount")
 ):
     """
     Upload bank and splitwise CSV files for analysis
-    
-    Analysis runs in background. Use /sessions/{id}/status to check progress.
     """
     try:
         # Validate file types
@@ -326,7 +326,15 @@ async def upload_files(
         if not splitwise_file.filename.endswith('.csv'):
             raise HTTPException(status_code=400, detail="Splitwise file must be CSV")
         
-        # Create upload session
+        # Parse config
+        config = {}
+        if family_members:
+            # Split by comma and clean whitespace
+            config['family_members'] = [name.strip() for name in family_members.split(',') if name.strip()]
+        if monthly_rent:
+            config['monthly_rent'] = monthly_rent
+        
+        # Create upload session with config
         from app.services.session_manager import create_upload_session, check_duplicate_session
         
         month_str = f"{year}-{month:02d}"
@@ -339,11 +347,12 @@ async def upload_files(
                 detail=f"Month {month_str} already analyzed. Session ID: {duplicate['session_id']}"
             )
         
-        # Create new session
+        # Create new session with config
         session_info = create_upload_session(
             user_id=1,
             selected_month=month,
-            selected_year=year
+            selected_year=year,
+            config=config  # NEW
         )
         
         session_id = session_info['session_id']
@@ -368,7 +377,6 @@ async def upload_files(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # STATUS ENDPOINT

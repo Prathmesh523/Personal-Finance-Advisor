@@ -1,5 +1,7 @@
 from app.database.connection import get_db_connection
 from difflib import SequenceMatcher
+import re
+from psycopg2.extras import execute_values
 
 def detect_settlements(user_id=1, session_id=None):
     """Add WHERE upload_session_id = session_id"""
@@ -108,53 +110,135 @@ def detect_settlements(user_id=1, session_id=None):
 
 def auto_categorize_bank_transactions(session_id, user_id=1):
     """
-    Auto-categorize bank transactions based on merchant keywords
-    Should be run AFTER settlement/transfer detection
+    Auto-categorize bank transactions with user config support
     """
     
+    # Get user config from session
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT user_config FROM upload_sessions WHERE id = %s
+    """, (session_id,))
+    
+    result = cur.fetchone()
+    user_config = {}
+    
+    if result and result[0]:
+        user_config = result[0]
+    
+    family_members = user_config.get('family_members', [])
+    monthly_rent = user_config.get('monthly_rent')
+    
+    print(f"\n🎯 User Config: Family={family_members}, Rent={monthly_rent}")
+    
+    # Expanded keyword categories
     CATEGORY_KEYWORDS = {
         'Food & Dining': [
-            'SWIGGY', 'ZOMATO', 'RESTAURANT', 'CAFE', 'KFC', 'MCDONALD', 
-            'PIZZA', 'STARBUCKS', 'DOMINOS', 'SUBWAY', 'BURGER', 'HOTEL',
-            'KITCHEN', 'CANTEEN', 'FOOD', 'DINING', 'DUNKIN', 'BASKIN'
+            'SWIGGY', 'ZOMATO', 'DUNZO', 'FRESHMENU', 'FAASOS', 'BEHROUZ',
+            'RESTAURANT', 'CAFE', 'COFFEE', 'KFC', 'MCDONALD', 'PIZZA', 
+            'DOMINO', 'SUBWAY', 'BURGER', 'STARBUCKS', 'CCD', 'BARISTA',
+            'HOTEL', 'DHABA', 'KITCHEN', 'CANTEEN', 'FOOD', 'DINING',
+            'BASKIN', 'DUNKIN', 'TACO BELL', 'HALDIRAM', 'BIRYANI',
+            'CHINESE', 'NORTH INDIAN', 'SOUTH INDIAN', 'CONTINENTAL'
         ],
         'Groceries': [
             'INSTAMART', 'BLINKIT', 'ZEPTO', 'BIGBASKET', 'DMART', 
-            'SUPERMARKET', 'GROCERY', 'FRESH', 'VEGETABLES', 'FRUITS'
+            'SUPERMARKET', 'GROCERY', 'FRESH', 'VEGETABLES', 'FRUITS',
+            'RELIANCE FRESH', 'MORE MEGASTORE', 'SPAR', 'JIOMART'
         ],
         'Transport': [
             'UBER', 'OLA', 'RAPIDO', 'METRO', 'IRCTC', 'BUS', 'PETROL', 
             'FUEL', 'TRAIN', 'FLIGHT', 'AIRLINE', 'MAKEMYTRIP', 'GOIBIBO',
-            'CAB', 'TAXI', 'AUTO'
+            'CAB', 'TAXI', 'AUTO', 'INDIAN OIL', 'HP PETROL', 'BHARAT PETROLEUM',
+            'FASTAG', 'PARKING', 'TOLL'
         ],
         'Shopping': [
             'AMAZON', 'FLIPKART', 'MYNTRA', 'AJIO', 'MEESHO', 'MALL',
-            'SHOP', 'STORE', 'RETAIL', 'NYKAA', 'LENSKART'
+            'SHOP', 'STORE', 'RETAIL', 'NYKAA', 'LENSKART', 'CROMA',
+            'LIFESTYLE', 'WESTSIDE', 'PANTALOONS', 'MAX FASHION',
+            'DECATHLON', 'NIKE', 'ADIDAS'
         ],
         'Entertainment': [
             'NETFLIX', 'PRIME', 'HOTSTAR', 'BOOKMYSHOW', 'PVR', 'INOX',
-            'SPOTIFY', 'YOUTUBE', 'CINEMA', 'MOVIE', 'GAME', 'GAMING'
+            'SPOTIFY', 'YOUTUBE', 'CINEMA', 'MOVIE', 'GAME', 'GAMING',
+            'PLAY STORE', 'APP STORE', 'STEAM', 'XBOX', 'PLAYSTATION'
         ],
         'Bills & Utilities': [
             'ELECTRICITY', 'WATER', 'GAS', 'BROADBAND', 'MOBILE', 'RECHARGE',
-            'AIRTEL', 'JIO', 'VODAFONE', 'BILL', 'TATA POWER', 'BSNL'
+            'AIRTEL', 'JIO', 'VODAFONE', 'BILL', 'TATA POWER', 'BSNL',
+            'ACT FIBERNET', 'HATHWAY', 'DTH', 'DISH TV'
         ],
         'Health': [
             'PHARMACY', 'MEDICINE', 'APOLLO', 'MEDPLUS', 'HOSPITAL',
-            'DOCTOR', 'CLINIC', 'HEALTH', 'MEDICAL', '1MG', 'PHARMEASY'
+            'DOCTOR', 'CLINIC', 'HEALTH', 'MEDICAL', '1MG', 'PHARMEASY',
+            'NETMEDS', 'DIAGNOSTIC', 'LAB TEST', 'PRACTO'
         ],
-        'Investment':[
-            'GROWW', 'ZERODHA', 'ANGEL ONE', 'UPSTOX'
+        'Investment': [
+            'GROWW', 'ZERODHA', 'ANGEL ONE', 'UPSTOX', 'SIP', 'MUTUAL FUND',
+            'STOCKS', 'KUVERA', 'COIN', 'SMALLCASE', 'ETF'
+        ],
+        'Education': [
+            'UDEMY', 'COURSERA', 'UNACADEMY', 'BYJU', 'SCHOOL', 'COLLEGE',
+            'TUITION', 'COURSE', 'BOOK', 'EXAM FEE'
         ]
     }
     
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    print("\n🏷️  Auto-Categorizing Bank Transactions...")
-    
     total_categorized = 0
+    family_categorized = 0
+    rent_categorized = 0
     
+    # 1. Family Transfer Detection (Fuzzy match)
+    if family_members:
+        for member in family_members:
+            member_upper = member.upper().strip()
+            
+            # Fuzzy search: match if ANY word from member name appears
+            name_parts = member_upper.split()
+            
+            for name_part in name_parts:
+                if len(name_part) >= 3:  # Skip very short words like "MR", "MS"
+                    cur.execute("""
+                        UPDATE transactions
+                        SET category = 'Family Transfer'
+                        WHERE upload_session_id = %s
+                          AND user_id = %s
+                          AND source = 'BANK'
+                          AND (category IS NULL OR category = 'Uncategorized')
+                          AND status != 'TRANSFER'
+                          AND UPPER(description) LIKE %s
+                    """, (session_id, user_id, f'%{name_part}%'))
+                    
+                    count = cur.rowcount
+                    if count > 0:
+                        family_categorized += count
+                        print(f"   ✅ {count} → 'Family Transfer' (matched: {name_part})")
+                    
+                    conn.commit()
+    
+    # 2. Rent Detection (Amount-based with tolerance)
+    if monthly_rent and monthly_rent > 0:
+        tolerance = monthly_rent * 0.05  # ±5% tolerance
+        
+        cur.execute("""
+            UPDATE transactions
+            SET category = 'Rent'
+            WHERE upload_session_id = %s
+              AND user_id = %s
+              AND source = 'BANK'
+              AND (category IS NULL OR category = 'Uncategorized')
+              AND status != 'TRANSFER'
+              AND amount < 0
+              AND ABS(ABS(amount) - %s) <= %s
+        """, (session_id, user_id, monthly_rent, tolerance))
+        
+        rent_categorized = cur.rowcount
+        if rent_categorized > 0:
+            print(f"   ✅ {rent_categorized} → 'Rent' (amount ≈ ₹{monthly_rent:,.0f})")
+        
+        conn.commit()
+    
+    # 3. Keyword-based categorization (existing logic)
     for category, keywords in CATEGORY_KEYWORDS.items():
         for keyword in keywords:
             cur.execute("""
@@ -171,11 +255,11 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
             count = cur.rowcount
             if count > 0:
                 total_categorized += count
-                print(f"   ✓ {count} → '{category}' (keyword: {keyword})")
+                print(f"   ✅ {count} → '{category}' (keyword: {keyword})")
             
             conn.commit()
     
-    # Set remaining as 'Other'
+    # 4. Set remaining as 'Other'
     cur.execute("""
         UPDATE transactions
         SET category = 'Other'
@@ -193,7 +277,11 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
     
     conn.commit()
     
-    print(f"\n✅ Auto-Categorization Complete. Categorized {total_categorized} transactions.")
+    print(f"\n✅ Categorization Complete:")
+    print(f"   Family: {family_categorized}")
+    print(f"   Rent: {rent_categorized}")
+    print(f"   Keywords: {total_categorized - family_categorized - rent_categorized}")
+    print(f"   Total: {total_categorized}")
     
     cur.close()
     conn.close()

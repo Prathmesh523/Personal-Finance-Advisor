@@ -28,22 +28,49 @@ export default function UploadPage() {
     bankFile: File,
     splitwiseFile: File,
     month: number,
-    year: number
+    year: number,
+    familyMembers: string,
+    monthlyRent: string
   ) => {
     try {
       setStatus('uploading');
       setError(null);
 
-      // Upload files
-      const response = await api.uploadFiles(bankFile, splitwiseFile, month, year);
+      // Create FormData with config
+      const formData = new FormData();
+      formData.append('bank_file', bankFile);
+      formData.append('splitwise_file', splitwiseFile);
+      formData.append('month', month.toString());
+      formData.append('year', year.toString());
       
-      setSessionId(response.session_id);
-      storage.setSessionId(response.session_id);
+      // Add optional config
+      if (familyMembers.trim()) {
+        formData.append('family_members', familyMembers.trim());
+      }
+      if (monthlyRent.trim()) {
+        formData.append('monthly_rent', monthlyRent.trim());
+      }
+
+      // Upload
+      const response = await fetch('http://localhost:8000/api/v1/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+        throw new Error(error.detail || `Upload Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      setSessionId(data.session_id);
+      storage.setSessionId(data.session_id);
       
       setStatus('processing');
 
       // Poll for status
-      pollStatus(response.session_id);
+      pollStatus(data.session_id);
     } catch (err) {
       setStatus('error');
       setError(err instanceof Error ? err.message : 'Upload failed');

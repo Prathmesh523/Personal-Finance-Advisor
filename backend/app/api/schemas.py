@@ -136,3 +136,17 @@ class GroupedTransactionsResponse(BaseModel):
     page: int
     limit: int
     total_pages: int
+
+# Add this to existing schemas
+
+class UploadConfig(BaseModel):
+    family_members: Optional[List[str]] = []
+    monthly_rent: Optional[float] = None
+
+# Update UploadResponse to include config
+class UploadResponseWithConfig(BaseModel):
+    session_id: str
+    status: str
+    message: str
+    selected_month: str
+    config: Optional[UploadConfig] = None

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { storage } from '@/lib/storage';
+import { formatMonth } from '@/lib/utils';
 import { TransactionGroup } from '@/types';
 import { GroupedTransactionList } from '@/components/GroupedTransactionList';
 import {
@@ -17,12 +18,14 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Calendar } from 'lucide-react';
 
 export default function TransactionsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
   const [groups, setGroups] = useState<TransactionGroup[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -45,6 +48,15 @@ export default function TransactionsPage() {
     }
 
     fetchTransactions(sessionId, currentPage);
+    
+    // Fetch session info for month display  // NEW
+    if (!sessionMonth) {
+      api.getSessionStatus(sessionId).then((data) => {
+        setSessionMonth(data.selected_month);
+      }).catch((err) => {
+        console.error('Failed to get session info:', err);
+      });
+    }
   }, [router, currentPage, sourceFilter, statusFilter, categoryFilter]);
 
   const fetchTransactions = async (sessionId: string, page: number) => {
@@ -136,10 +148,25 @@ export default function TransactionsPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
-          <p className="text-gray-600 mt-2">
-            {totalCount} group{totalCount !== 1 ? 's' : ''} • {totalTransactions} transaction{totalTransactions !== 1 ? 's' : ''}
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Transactions</h1>
+              <p className="text-gray-600 mt-2">
+                {totalCount} group{totalCount !== 1 ? 's' : ''} • {totalTransactions} transaction{totalTransactions !== 1 ? 's' : ''}
+              </p>
+            </div>
+            {sessionMonth && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <div>
+                  <p className="text-xs text-gray-600">Analysis Period</p>
+                  <p className="text-sm font-semibold text-gray-900">
+                    {formatMonth(sessionMonth)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Filters */}

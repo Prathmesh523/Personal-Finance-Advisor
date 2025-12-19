@@ -13,14 +13,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 
 interface UploadFormProps {
   onSubmit: (
     bankFile: File,
     splitwiseFile: File,
     month: number,
-    year: number
+    year: number,
+    familyMembers: string,
+    monthlyRent: string
   ) => void;
   loading: boolean;
 }
@@ -30,6 +32,10 @@ export function UploadForm({ onSubmit, loading }: UploadFormProps) {
   const [splitwiseFile, setSplitWiseFile] = useState<File | null>(null);
   const [month, setMonth] = useState<number>(new Date().getMonth() + 1);
   const [year, setYear] = useState<number>(new Date().getFullYear());
+  
+  // NEW: Config fields
+  const [familyMembers, setFamilyMembers] = useState<string>('');
+  const [monthlyRent, setMonthlyRent] = useState<string>('');
 
   const months = [
     { value: 1, label: 'January' },
@@ -56,7 +62,7 @@ export function UploadForm({ onSubmit, loading }: UploadFormProps) {
       return;
     }
 
-    onSubmit(bankFile, splitwiseFile, month, year);
+    onSubmit(bankFile, splitwiseFile, month, year, familyMembers, monthlyRent);
   };
 
   const isFormValid = bankFile && splitwiseFile;
@@ -65,6 +71,9 @@ export function UploadForm({ onSubmit, loading }: UploadFormProps) {
     <Card className="max-w-2xl mx-auto">
       <CardHeader>
         <CardTitle>Upload Financial Data</CardTitle>
+        <CardDescription>
+          Upload your bank statement and Splitwise export to analyze your spending
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -138,6 +147,56 @@ export function UploadForm({ onSubmit, loading }: UploadFormProps) {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* NEW: Configuration Section */}
+          <div className="border-t pt-6 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                Optional: Improve Categorization
+              </h3>
+              <p className="text-xs text-gray-500">
+                Help us categorize your transactions better
+              </p>
+            </div>
+
+            {/* Family Members */}
+            <div className="space-y-2">
+              <Label htmlFor="family-members">
+                Family Member Names
+                <span className="text-xs text-gray-500 ml-2">(comma-separated)</span>
+              </Label>
+              <Input
+                id="family-members"
+                type="text"
+                placeholder="e.g., Mom, Dad, Sister"
+                value={familyMembers}
+                onChange={(e) => setFamilyMembers(e.target.value)}
+                disabled={loading}
+              />
+              <p className="text-xs text-gray-500">
+                Transfers to these names will be categorized as "Family Transfer"
+              </p>
+            </div>
+
+            {/* Monthly Rent */}
+            <div className="space-y-2">
+              <Label htmlFor="monthly-rent">
+                Monthly Rent/Housing Amount
+                <span className="text-xs text-gray-500 ml-2">(optional)</span>
+              </Label>
+              <Input
+                id="monthly-rent"
+                type="number"
+                placeholder="e.g., 15000"
+                value={monthlyRent}
+                onChange={(e) => setMonthlyRent(e.target.value)}
+                disabled={loading}
+              />
+              <p className="text-xs text-gray-500">
+                Recurring payments near this amount will be categorized as "Rent"
+              </p>
             </div>
           </div>
 
