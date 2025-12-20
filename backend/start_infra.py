@@ -23,6 +23,9 @@ def run_command(description, command, check=True):
     return True
 
 def main():
+    # Check for reset flag
+    reset_mode = '--reset' in sys.argv or '-r' in sys.argv
+    
     print("""
     ╔═══════════════════════════════════════════════════════╗
     ║         INFRASTRUCTURE SETUP - TERMINAL 1            ║
@@ -30,7 +33,13 @@ def main():
     ╚═══════════════════════════════════════════════════════╝
     """)
     
-    print("\n🏗️  PHASE 1: DOCKER INFRASTRUCTURE")
+    if reset_mode:
+        print("⚠️  RESET MODE: Will drop all tables and recreate schema\n")
+    else:
+        print("ℹ️  NORMAL MODE: Using existing schema\n")
+        print("💡 To reset schema, run: python start_infra.py --reset\n")
+    
+    print("🏗️  PHASE 1: DOCKER INFRASTRUCTURE")
     
     # Step 1: Clean slate
     run_command("Stopping existing containers", "docker-compose down", check=False)
@@ -46,11 +55,30 @@ def main():
         time.sleep(1)
     print("   ✅ Services ready!          ")
     
-    # Step 3: Initialize database
+    # Step 3: Database setup
     print("\n💾 PHASE 2: DATABASE SETUP")
-    if not run_command("Creating database schema", "python init_db.py"):
-        print("\n❌ Database initialization failed")
-        sys.exit(1)
+    
+    if reset_mode:
+        # Reset schema (drop + recreate)
+        if not run_command("Resetting database schema", "python reset_schema.py"):
+            print("\n❌ Schema reset failed")
+            sys.exit(1)
+    else:
+        # Check if tables exist, if not create them
+        print("Checking if schema exists...")
+        result = subprocess.run(
+            "python -c \"from app.database.connection import get_db_connection; conn = get_db_connection(); cur = conn.cursor(); cur.execute('SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN (\\\"bank_transactions\\\", \\\"splitwise_transactions\\\")'); count = cur.fetchone()[0]; cur.close(); conn.close(); exit(0 if count == 2 else 1)\"",
+            shell=True,
+            capture_output=True
+        )
+        
+        if result.returncode != 0:
+            print("Schema not found, creating...")
+            if not run_command("Creating database schema", "python reset_schema.py"):
+                print("\n❌ Schema creation failed")
+                sys.exit(1)
+        else:
+            print("✅ Schema exists, skipping creation")
     
     # Step 4: Start consumer
     print("\n🔄 PHASE 3: KAFKA CONSUMER")
@@ -74,7 +102,9 @@ def main():
         print("\n\n" + "="*60)
         print("🛑 CONSUMER STOPPED")
         print("="*60)
-        print("\n💡 To restart everything, run: python start_infrastructure.py")
+        print("\n💡 To restart:")
+        print("   Normal mode: python start_infra.py")
+        print("   Reset mode:  python start_infra.py --reset")
         print()
 
 if __name__ == "__main__":

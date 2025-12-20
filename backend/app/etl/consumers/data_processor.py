@@ -37,38 +37,60 @@ def process_messages():
             try:
                 data = json.loads(msg.value().decode('utf-8'))
                 
-                txn_hash = data['transaction_id']
-                user_id = data['user_id']
-                date = data['date']
-                amount = float(data['amount'])
-                desc = data['description']
-                source = data['source']
-                category = data.get('category', 'Uncategorized')
-                status = data.get('status', 'UNLINKED') # FIX: Get Status
+                source = data.get('source')  # 'BANK' or 'SPLITWISE' (temporary field)
                 
-                role = data.get('meta_role', None)
-                total_bill = data.get('meta_total_cost', None)
-
-                # 4. Insert into Postgres (FIX: Added status column)
-                insert_query = """
-                INSERT INTO transactions 
-                (transaction_id, user_id, date, amount, description, source, category, 
-                status, role, meta_total_bill, upload_session_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (transaction_id) DO NOTHING;
-                """
+                if source == 'BANK':
+                    # Insert into bank_transactions
+                    insert_query = """
+                    INSERT INTO bank_transactions 
+                    (transaction_id, user_id, upload_session_id, date, amount, 
+                     description, category, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO NOTHING;
+                    """
+                    
+                    cur.execute(insert_query, (
+                        data['transaction_id'],
+                        data['user_id'],
+                        data.get('upload_session_id'),
+                        data['date'],
+                        data['amount'],
+                        data['description'],
+                        data['category'],
+                        data['status']
+                    ))
+                    
+                    conn.commit()
+                    icon = "🏦"
+                    print(f"{icon} Bank: {data['description'][:30]:30} | ₹{data['amount']:,.2f}")
                 
-                # Add upload_session_id to values
-                session_id = data.get('upload_session_id', None)  # NEW
-
-                cur.execute(insert_query, (
-                    txn_hash, user_id, date, amount, desc, source, 
-                    category, status, role, total_bill, session_id  # NEW
-                ))
-                conn.commit()
-                
-                icon = "🏦" if source == "BANK" else "🍕"
-                print(f"{icon} Saved: {desc[:20]}... | {amount}")
+                elif source == 'SPLITWISE':
+                    # Insert into splitwise_transactions
+                    insert_query = """
+                    INSERT INTO splitwise_transactions 
+                    (transaction_id, user_id, upload_session_id, date, total_cost,
+                     description, category, my_column_value, my_share, role, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO NOTHING;
+                    """
+                    
+                    cur.execute(insert_query, (
+                        data['transaction_id'],
+                        data['user_id'],
+                        data.get('upload_session_id'),
+                        data['date'],
+                        data['total_cost'],
+                        data['description'],
+                        data['category'],
+                        data['my_column_value'],
+                        data['my_share'],
+                        data['role'],
+                        data['status']
+                    ))
+                    
+                    conn.commit()
+                    icon = "🍕"
+                    print(f"{icon} Split: {data['description'][:30]:30} | Role: {data['role'][:10]:10} | Share: ₹{data['my_share']:,.2f}")
 
             except Exception as e:
                 print(f"❌ Error processing message: {e}")

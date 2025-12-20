@@ -41,18 +41,18 @@ def pick_best_candidate(s_desc, candidates, threshold=0.0, return_score=False):
 def link_transactions(cur, split_id, bank_id, method, confidence):
     """Link two transactions with confidence tracking"""
     cur.execute("""
-        UPDATE transactions 
+        UPDATE splitwise_transactions 
         SET status = 'LINKED', 
-            link_id = %s,
+            linked_bank_id = %s,
             match_confidence = %s,
             match_method = %s
         WHERE id = %s
     """, (bank_id, confidence, method, split_id))
     
     cur.execute("""
-        UPDATE transactions 
+        UPDATE bank_transactions 
         SET status = 'LINKED', 
-            link_id = %s,
+            linked_splitwise_id = %s,
             match_confidence = %s,
             match_method = %s
         WHERE id = %s
@@ -60,25 +60,24 @@ def link_transactions(cur, split_id, bank_id, method, confidence):
     
     print(f"   🔗 LINKED! Split {split_id} <-> Bank {bank_id} [{method}] ({confidence:.0%})")
 
-def run_linker(user_id=1, session_id=None):  # NEW parameter
-    """Add WHERE upload_session_id = session_id to all queries"""
+def run_linker(user_id=1, session_id=None):
+    """Link bank and splitwise transactions"""
     
     conn = get_db_connection()
     cur = conn.cursor()
     
     print("🔄 Starting System Linker...")
     
-    # Modified query with session filter
+    # Get splitwise transactions where user PAID (role = PAYER, not settlement)
     cur.execute("""
-        SELECT id, date, meta_total_bill, description
-        FROM transactions 
+        SELECT id, date, total_cost, description
+        FROM splitwise_transactions 
         WHERE user_id = %s 
-          AND source = 'SPLITWISE' 
+          AND upload_session_id = %s
           AND role = 'PAYER'
           AND status = 'UNLINKED'
-          AND upload_session_id = %s
         ORDER BY date
-    """, (user_id, session_id))  # NEW
+    """, (user_id, session_id))
     
     splitwise_txns = cur.fetchall()
     print(f"🔍 Found {len(splitwise_txns)} Splitwise entries to process.")
@@ -94,26 +93,27 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
         s_id, s_date, s_total, s_desc = s_txn
         target_amount = float(s_total)
         
-        # FIX: Select 'date' so tuple unpacking works
         cur.execute("""
-            SELECT id, date, description FROM transactions 
-            WHERE user_id = %s AND source = 'BANK' AND status = 'UNLINKED'
-            AND ABS(ABS(amount) - %s) < 1.00
-            AND date = %s
+            SELECT id, date, description 
+            FROM bank_transactions 
+            WHERE user_id = %s 
+              AND status = 'UNLINKED'
+              AND ABS(ABS(amount) - %s) < 1.00
+              AND date = %s
         """, (user_id, target_amount, s_date))
         
         candidates = cur.fetchall()
         
         if len(candidates) == 1:
             b_id, b_date, b_desc = candidates[0]
-            confidence = 1.00  # Perfect: exact amount, same day, single match
+            confidence = 1.00
             link_transactions(cur, s_id, b_id, "Pass 1: Exact Match", confidence)
             links_made += 1
             conn.commit()
         elif len(candidates) > 1:
             best_id, similarity_score = pick_best_candidate(s_desc, candidates, return_score=True)
             if best_id:
-                confidence = 0.90 + (similarity_score * 0.10)  # 0.90-1.00 based on text match
+                confidence = 0.90 + (similarity_score * 0.10)
                 link_transactions(cur, s_id, best_id, "Pass 1: Tie-Break", confidence)
                 links_made += 1
                 conn.commit()
@@ -131,21 +131,21 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
         s_id, s_date, s_total, s_desc = s_txn
         target_amount = float(s_total)
         
-        # FIX: Added s_date TWICE to arguments
         cur.execute("""
-            SELECT id, date, description FROM transactions 
-            WHERE user_id = %s AND source = 'BANK' AND status = 'UNLINKED'
-            AND ABS(ABS(amount) - %s) < 1.00
-            AND date >= (%s::date - INTERVAL '2 days')
-            AND date <= (%s::date + INTERVAL '2 days')
-        """, (user_id, target_amount, s_date, s_date)) 
+            SELECT id, date, description 
+            FROM bank_transactions 
+            WHERE user_id = %s 
+              AND status = 'UNLINKED'
+              AND ABS(ABS(amount) - %s) < 1.00
+              AND date >= (%s::date - INTERVAL '2 days')
+              AND date <= (%s::date + INTERVAL '2 days')
+        """, (user_id, target_amount, s_date, s_date))
         
         candidates = cur.fetchall()
         
         best_id, similarity_score = pick_best_candidate(s_desc, candidates, threshold=0.3, return_score=True)
 
         if best_id:
-            # Confidence: 0.70-0.85 based on text similarity
             confidence = 0.70 + (similarity_score * 0.15)
             link_transactions(cur, s_id, best_id, "Pass 2: Fuzzy Date", confidence)
             links_made += 1
@@ -160,13 +160,14 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
         s_id, s_date, s_total, s_desc = s_txn
         target_amount = float(s_total)
         
-        # FIX: Added s_date TWICE to arguments
         cur.execute("""
-            SELECT id, date, description FROM transactions 
-            WHERE user_id = %s AND source = 'BANK' AND status = 'UNLINKED'
-            AND ABS(ABS(amount) - %s) < 1.00
-            AND date >= (%s::date - INTERVAL '1 day')
-            AND date <= (%s::date + INTERVAL '1 day')
+            SELECT id, date, description 
+            FROM bank_transactions 
+            WHERE user_id = %s 
+              AND status = 'UNLINKED'
+              AND ABS(ABS(amount) - %s) < 1.00
+              AND date >= (%s::date - INTERVAL '1 day')
+              AND date <= (%s::date + INTERVAL '1 day')
         """, (user_id, target_amount, s_date, s_date))
         
         candidates = cur.fetchall()
@@ -175,7 +176,6 @@ def run_linker(user_id=1, session_id=None):  # NEW parameter
             b_id, b_date, b_desc = candidates[0]
             score = calculate_similarity(s_desc, b_desc)
             if score > 0.15:
-                # Confidence: 0.60-0.75 based on text similarity
                 confidence = 0.60 + (score * 0.15)
                 link_transactions(cur, s_id, b_id, "Pass 3: Blind Trust", confidence)
                 links_made += 1
@@ -190,7 +190,7 @@ def run_full_pipeline(session_id, user_id=1):
     from app.services.categorization import (
         detect_settlements, 
         detect_other_transfers,
-        auto_categorize_bank_transactions  # NEW
+        auto_categorize_bank_transactions
     )
     
     print("=" * 60)
@@ -198,11 +198,11 @@ def run_full_pipeline(session_id, user_id=1):
     print(f"   Session: {session_id}")
     print("=" * 60)
     
-    # Pass session_id to all functions
+    # Run pipeline
     settlements = detect_settlements(user_id, session_id)
     run_linker(user_id, session_id)
     other_transfers = detect_other_transfers(user_id, session_id)
-    auto_categorize_bank_transactions(session_id, user_id)  # NEW
+    auto_categorize_bank_transactions(session_id, user_id)
     
     # Mark session complete
     from app.services.session_manager import mark_session_complete

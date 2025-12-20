@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta
 from app.database.connection import get_db_connection
+import json
 
 def create_upload_session(user_id, selected_month, selected_year, config=None):
     """
@@ -21,16 +22,12 @@ def create_upload_session(user_id, selected_month, selected_year, config=None):
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # Convert config to JSON if provided
-    import json
-    config_json = json.dumps(config) if config else None
-    
     cur.execute("""
         INSERT INTO upload_sessions 
         (id, user_id, selected_month, start_date, end_date, status, user_config)
         VALUES (%s, %s, %s, %s, %s, 'processing', %s)
-    """, (session_id, user_id, f"{selected_year}-{selected_month:02d}", 
-          start_date, end_date, config_json))
+    """, (session_id, user_id, f"{selected_year}-{selected_month:02d}", start_date, end_date, 
+          json.dumps(config) if config else None))
     
     conn.commit()
     cur.close()
@@ -42,7 +39,7 @@ def create_upload_session(user_id, selected_month, selected_year, config=None):
         'end_date': end_date
     }
 
-def update_session_counts(session_id, bank_count, splitwise_count, excluded_count):
+def update_session_counts(session_id, bank_count, splitwise_count, excluded_count, skipped_not_involved=0):
     """Update transaction counts for session"""
     conn = get_db_connection()
     cur = conn.cursor()
@@ -51,9 +48,10 @@ def update_session_counts(session_id, bank_count, splitwise_count, excluded_coun
         UPDATE upload_sessions
         SET bank_count = %s,
             splitwise_count = %s,
-            excluded_count = %s
+            excluded_count = %s,
+            skipped_not_involved = %s
         WHERE id = %s
-    """, (bank_count, splitwise_count, excluded_count, session_id))
+    """, (bank_count, splitwise_count, excluded_count, skipped_not_involved, session_id))  # ✅ NEW param
     
     conn.commit()
     cur.close()

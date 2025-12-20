@@ -26,9 +26,9 @@ export interface SessionStatus {
 
 // Metrics related
 export interface ConsumptionBreakdown {
-  solo: number;
-  split_you_paid: number;
-  split_friend_paid: number;
+  solo_spend: number;
+  split_i_paid: number;
+  split_they_paid: number;
 }
 
 export interface NetConsumption {

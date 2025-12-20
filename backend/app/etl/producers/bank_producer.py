@@ -54,9 +54,9 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
             if clean_data:
                 transaction_date = clean_data['date']
                 
-                # NEW: Filter by date range
                 if start_date <= transaction_date <= end_date:
-                    # Add session_id to transaction
+                    # ✅ Add source field (temporary, for consumer)
+                    clean_data['source'] = 'BANK'  # NEW LINE
                     clean_data['upload_session_id'] = session_id
                     
                     producer.produce(
@@ -67,7 +67,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
                     )
                     count += 1
                 else:
-                    excluded_count += 1  # Count but don't send
+                    excluded_count += 1
             
         producer.flush()
         print(f"🚀 Successfully sent {count} bank transactions.")

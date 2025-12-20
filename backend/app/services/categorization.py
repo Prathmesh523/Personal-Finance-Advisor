@@ -4,31 +4,23 @@ import re
 from psycopg2.extras import execute_values
 
 def detect_settlements(user_id=1, session_id=None):
-    """Add WHERE upload_session_id = session_id"""
+    """Detect and mark settlement transactions"""
     conn = get_db_connection()
     cur = conn.cursor()
     
     print("\n🔍 Starting Settlement Detection...")
     
-    # Step 1: Find Splitwise Payment entries
+    # Step 1: Find Splitwise settlements (already marked during parsing)
     cur.execute("""
-        SELECT id, date, meta_total_bill, description
-        FROM transactions
+        SELECT id, date, total_cost, description
+        FROM splitwise_transactions
         WHERE user_id = %s 
-          AND source = 'SPLITWISE'
-          AND role = 'PAYER'
-          AND status = 'UNLINKED'
           AND upload_session_id = %s
-          AND (
-            LOWER(category) = 'payment'
-            OR LOWER(description) LIKE '%%payment%%'
-            OR LOWER(description) LIKE '%%settle%%'
-            OR LOWER(description) LIKE '%%paid back%%'
-        )
+          AND status = 'SETTLEMENT'
     """, (user_id, session_id))
     
     settlement_candidates = cur.fetchall()
-    print(f"📋 Found {len(settlement_candidates)} potential settlement entries in Splitwise")
+    print(f"📋 Found {len(settlement_candidates)} settlement entries in Splitwise")
     
     if len(settlement_candidates) == 0:
         print("✅ No settlements to process")
@@ -40,10 +32,10 @@ def detect_settlements(user_id=1, session_id=None):
     
     # Step 2: Process each settlement
     for split_txn in settlement_candidates:
-        split_id, split_date, split_total, split_desc = split_txn  # 4 columns = 4 variables ✓
+        split_id, split_date, split_total, split_desc = split_txn
         
         if split_total is None:
-            print(f"⚠️  Skipping {split_desc} - no amount")
+            print(f"⚠️ Skipping {split_desc} - no amount")
             continue
         
         target_amount = float(split_total)
@@ -51,13 +43,11 @@ def detect_settlements(user_id=1, session_id=None):
         
         print(f"\n🔎 Processing: {split_desc} | ₹{target_amount} | {split_date}")
         
-        # Step 3: Find matching Bank withdrawal
+        # Step 3: Find matching Bank transaction
         cur.execute("""
             SELECT id, date, description
-            FROM transactions
+            FROM bank_transactions
             WHERE user_id = %s 
-              AND source = 'BANK'
-              AND amount < 0
               AND ABS(ABS(amount) - %s) <= %s
               AND date >= (%s::date - INTERVAL '2 days')
               AND date <= (%s::date + INTERVAL '2 days')
@@ -67,7 +57,7 @@ def detect_settlements(user_id=1, session_id=None):
         bank_candidates = cur.fetchall()
         
         if len(bank_candidates) == 0:
-            print("   ⚠️  No matching bank withdrawal found")
+            print("   ⚠️ No matching bank transaction found")
             continue
         
         # Step 4: Pick best match
@@ -82,18 +72,22 @@ def detect_settlements(user_id=1, session_id=None):
         if best_match:
             bank_id = best_match[0]
             
-            # Step 5: Mark both as Settlement
+            # Step 5: Mark both as Settlement and link them
             cur.execute("""
-                UPDATE transactions 
-                SET category = 'Settlement', status = 'TRANSFER'
+                UPDATE splitwise_transactions 
+                SET category = 'Settlement', 
+                    linked_bank_id = %s,
+                    status = 'LINKED'
                 WHERE id = %s
-            """, (split_id,))
+            """, (bank_id, split_id))
             
             cur.execute("""
-                UPDATE transactions 
-                SET category = 'Settlement', status = 'TRANSFER'
+                UPDATE bank_transactions 
+                SET category = 'Settlement', 
+                    linked_splitwise_id = %s,
+                    status = 'TRANSFER'
                 WHERE id = %s
-            """, (bank_id,))
+            """, (split_id, bank_id))
             
             conn.commit()
             settlements_marked += 1
@@ -125,14 +119,14 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
     user_config = {}
     
     if result and result[0]:
-        user_config = result[0]
+        user_config = result[0]  # ✅ FIXED - Already a dict from JSONB
     
     family_members = user_config.get('family_members', [])
     monthly_rent = user_config.get('monthly_rent')
     
     print(f"\n🎯 User Config: Family={family_members}, Rent={monthly_rent}")
     
-    # Expanded keyword categories
+    # Expanded keyword categories (same as before)
     CATEGORY_KEYWORDS = {
         'Food & Dining': [
             'SWIGGY', 'ZOMATO', 'DUNZO', 'FRESHMENU', 'FAASOS', 'BEHROUZ',
@@ -199,11 +193,10 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
             for name_part in name_parts:
                 if len(name_part) >= 3:  # Skip very short words like "MR", "MS"
                     cur.execute("""
-                        UPDATE transactions
+                        UPDATE bank_transactions
                         SET category = 'Family Transfer'
                         WHERE upload_session_id = %s
                           AND user_id = %s
-                          AND source = 'BANK'
                           AND (category IS NULL OR category = 'Uncategorized')
                           AND status != 'TRANSFER'
                           AND UPPER(description) LIKE %s
@@ -221,11 +214,10 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
         tolerance = monthly_rent * 0.05  # ±5% tolerance
         
         cur.execute("""
-            UPDATE transactions
+            UPDATE bank_transactions
             SET category = 'Rent'
             WHERE upload_session_id = %s
               AND user_id = %s
-              AND source = 'BANK'
               AND (category IS NULL OR category = 'Uncategorized')
               AND status != 'TRANSFER'
               AND amount < 0
@@ -238,15 +230,14 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
         
         conn.commit()
     
-    # 3. Keyword-based categorization (existing logic)
+    # 3. Keyword-based categorization
     for category, keywords in CATEGORY_KEYWORDS.items():
         for keyword in keywords:
             cur.execute("""
-                UPDATE transactions
+                UPDATE bank_transactions
                 SET category = %s
                 WHERE upload_session_id = %s
                   AND user_id = %s
-                  AND source = 'BANK'
                   AND (category IS NULL OR category = 'Uncategorized')
                   AND status != 'TRANSFER'
                   AND UPPER(description) LIKE %s
@@ -261,11 +252,10 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
     
     # 4. Set remaining as 'Other'
     cur.execute("""
-        UPDATE transactions
+        UPDATE bank_transactions
         SET category = 'Other'
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'BANK'
           AND (category IS NULL OR category = 'Uncategorized')
           AND status != 'TRANSFER'
     """, (session_id, user_id))
@@ -319,10 +309,8 @@ def find_best_settlement_match(split_desc, bank_candidates):
     
     return best_match if highest_score >= 0.3 else bank_candidates[0]
 
-
-def detect_other_transfers(user_id=1, session_id=None):  
-    """Add WHERE upload_session_id = session_id"""
-
+def detect_other_transfers(user_id=1, session_id=None):
+    """Detect non-spending transactions like investments, CC payments"""
     conn = get_db_connection()
     cur = conn.cursor()
     
@@ -340,10 +328,9 @@ def detect_other_transfers(user_id=1, session_id=None):
     for transfer_type, keywords in transfer_patterns.items():
         for keyword in keywords:
             cur.execute("""
-                UPDATE transactions
+                UPDATE bank_transactions
                 SET category = %s, status = 'TRANSFER'
                 WHERE user_id = %s
-                  AND source = 'BANK'
                   AND UPPER(description) LIKE %s
                   AND status = 'UNLINKED'
                   AND upload_session_id = %s
@@ -365,7 +352,6 @@ def detect_other_transfers(user_id=1, session_id=None):
     conn.close()
     
     return transfers_found
-
 
 if __name__ == "__main__":
     settlements = detect_settlements(user_id=1)

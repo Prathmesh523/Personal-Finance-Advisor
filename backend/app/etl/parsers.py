@@ -116,15 +116,14 @@ def normalize_bank_row(row, user_id=1):
         clean_desc = clean_description(raw_desc)
 
         return {
-            "transaction_id": generate_transaction_hash(f"{formatted_date}{amount}{raw_desc}"),
+            "transaction_id": generate_transaction_hash(f"{formatted_date}{amount}{raw_desc}"),  # ✅ Already exists
             "user_id": user_id,
             "date": formatted_date,
             "amount": amount,
             "description": clean_desc,
-            "source": "BANK",
-            "category": "Uncategorized",
-            "status": "UNLINKED",
-            "raw_data": str(row.to_dict())
+            "source": "BANK",  # ❌ REMOVE THIS (no longer needed)
+            "category": "Uncategorized",  # ✅ Changed from old logic
+            "status": "UNLINKED"  # ✅ Keep this
         }
     except Exception as e:
         if str(row.get('Date','')).strip() != '':
@@ -144,39 +143,54 @@ def normalize_splitwise_row(row, user_id=1):
         description = str(row['Description']).strip()
         category = str(row['Category']).strip()
         
-        my_col = "Prathamesh Patil"  # Your name
+        # Find user's column
+        my_col = "Prathamesh Patil"
         if my_col not in row:
             for col in row.index:
                 if "Prathamesh" in col:
                     my_col = col
                     break
-            
-        net_balance = clean_float(row[my_col])
-
-        my_share = 0.0
-        role = "PARTICIPANT"
         
-        if net_balance > 0:
-            my_share = total_cost - net_balance
-            role = "PAYER"
-        elif net_balance < 0:
-            my_share = abs(net_balance)
-            role = "BORROWER"
-
-        final_amount = -1 * my_share
+        my_column_value = clean_float(row[my_col])  # ✅ NEW: Store exact CSV value
+        
+        # Skip if not involved
+        if my_column_value == 0:
+            return {'skip': True, 'reason': 'not_involved'}  # ✅ NEW: Signal to skip
+        
+        # Determine role and calculate my_share
+        if category == 'Payment':
+            # Settlement transaction
+            if my_column_value > 0:
+                role = "SETTLEMENT_PAYER"
+                my_share = 0  # Settlements don't count as consumption
+            else:  # my_column_value < 0
+                role = "SETTLEMENT_RECEIVER"
+                my_share = 0
+        else:
+            # Normal split transaction
+            if my_column_value > 0:
+                role = "PAYER"
+                my_share = total_cost - my_column_value
+            else:  # my_column_value < 0
+                role = "BORROWER"
+                my_share = abs(my_column_value)
+        
+        # Generate transaction_id (include my_column_value for uniqueness)
+        transaction_id = generate_transaction_hash(
+            f"{formatted_date}{total_cost}{description}{my_column_value}SPLIT"
+        )
 
         return {
-            "transaction_id": generate_transaction_hash(f"{formatted_date}{final_amount}{description}SPLIT"),
+            "transaction_id": transaction_id,
             "user_id": user_id,
             "date": formatted_date,
-            "amount": final_amount,
+            "total_cost": total_cost,  # ✅ NEW field
             "description": description,
-            "source": "SPLITWISE",
             "category": category,
-            "status": "UNLINKED",
-            "meta_role": role,
-            "meta_total_cost": total_cost,
-            "meta_net_balance": net_balance
+            "my_column_value": my_column_value,  # ✅ NEW: Store CSV value
+            "my_share": my_share,  # ✅ NEW: Calculated share
+            "role": role,  # ✅ NEW: PAYER/BORROWER/SETTLEMENT_*
+            "status": "SETTLEMENT" if category == 'Payment' else "UNLINKED"  # ✅ NEW logic
         }
 
     except Exception as e:

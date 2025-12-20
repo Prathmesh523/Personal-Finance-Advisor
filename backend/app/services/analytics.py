@@ -10,17 +10,18 @@ CATEGORY_MAPPING = {
 
 def calculate_net_consumption(session_id, user_id=1):
     """
-    Calculate TRUE spending (what you actually consumed)
+    Calculate consumption breakdown
     
-    Formula:
-    = Solo expenses (unlinked bank transactions)
-      + Your share of splits (where you paid)
-      + Your share of splits (where friend paid)
+    Returns:
+    - Solo Spend: Unlinked bank transactions (exclude self-transfers)
+    - My Share (I Paid): My share where I paid the bill (splitwise > 0)
+    - My Share (They Paid): My share where friend paid (splitwise < 0)
+    - Total: Sum of above three
     """
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # 1. Solo expenses (bank transactions not linked to Splitwise)
+    # 1. Solo Spend (unlinked bank, exclude self-transfers)
     cur.execute("""
         SELECT COALESCE(SUM(ABS(amount)), 0)
         FROM transactions
@@ -29,50 +30,54 @@ def calculate_net_consumption(session_id, user_id=1):
           AND source = 'BANK'
           AND amount < 0
           AND status = 'UNLINKED'
-          AND category NOT IN ('Settlement', 'Investment', 'Credit Card', 'Savings', 'Self Transfer')
+          AND category NOT IN ('Self Transfer')
     """, (session_id, user_id))
     
-    solo_expenses = float(cur.fetchone()[0])
+    solo_spend = float(cur.fetchone()[0])
     
-    # 2. Your share of splits where YOU paid the bill
+    # 2. My Share (I Paid) - where splitwise column > 0
+    # Exclude settlements (category='Payment' or 'Settlement')
     cur.execute("""
         SELECT COALESCE(SUM(meta_total_bill - ABS(amount)), 0)
         FROM transactions
         WHERE upload_session_id = %s
           AND user_id = %s
           AND source = 'SPLITWISE'
-          AND role = 'PAYER'
-          AND status = 'LINKED'
+          AND amount < 0
+          AND meta_total_bill > ABS(amount)
+          AND category NOT IN ('Payment', 'Settlement')
     """, (session_id, user_id))
     
-    split_you_paid = float(cur.fetchone()[0])
+    split_i_paid = float(cur.fetchone()[0])
     
-    # 3. Your share of splits where FRIEND paid the bill
+    # 3. My Share (They Paid) - where splitwise column < 0
+    # Exclude settlements
     cur.execute("""
         SELECT COALESCE(SUM(ABS(amount)), 0)
         FROM transactions
         WHERE upload_session_id = %s
           AND user_id = %s
           AND source = 'SPLITWISE'
-          AND role = 'BORROWER'
+          AND amount < 0
+          AND (meta_total_bill IS NULL OR meta_total_bill <= ABS(amount))
+          AND category NOT IN ('Payment', 'Settlement')
     """, (session_id, user_id))
     
-    split_friend_paid = float(cur.fetchone()[0])
+    split_they_paid = float(cur.fetchone()[0])
     
     cur.close()
     conn.close()
     
-    total = solo_expenses + split_you_paid + split_friend_paid
+    total = solo_spend + split_i_paid + split_they_paid
     
     return {
         'total': round(total, 2),
         'breakdown': {
-            'solo': round(solo_expenses, 2),
-            'split_you_paid': round(split_you_paid, 2),
-            'split_friend_paid': round(split_friend_paid, 2)
+            'solo_spend': round(solo_spend, 2),
+            'split_i_paid': round(split_i_paid, 2),
+            'split_they_paid': round(split_they_paid, 2)
         }
     }
-
 
 def calculate_cash_outflow(session_id, user_id=1):
     """
@@ -108,36 +113,19 @@ def calculate_cash_outflow(session_id, user_id=1):
     
     return round(total, 2)
 
-
 def calculate_monthly_float(session_id, user_id=1):
     """
-    Calculate money you paid extra this month (that friends will settle later)
+    Calculate monthly float (difference between cash outflow and net consumption)
     
-    Formula:
-    = Sum of positive net balances in Splitwise
-    
-    Note: This is NOT total debt, just this month's float
+    Positive: You paid extra this month
+    Negative: Friends paid extra this month
     """
-    conn = get_db_connection()
-    cur = conn.cursor()
+    net_consumption = calculate_net_consumption(session_id, user_id)
+    cash_outflow = calculate_cash_outflow(session_id, user_id)
     
-    cur.execute("""
-        SELECT COALESCE(SUM(ABS(amount)), 0)
-        FROM transactions
-        WHERE upload_session_id = %s
-          AND user_id = %s
-          AND source = 'SPLITWISE'
-          AND role = 'PAYER'
-          AND status = 'LINKED'
-          AND meta_total_bill > ABS(amount)
-    """, (session_id, user_id))
+    float_amount = cash_outflow - net_consumption['total']
     
-    total = float(cur.fetchone()[0])
-    
-    cur.close()
-    conn.close()
-    
-    return round(total, 2)
+    return round(float_amount, 2)
 
 def get_category_breakdown(session_id, user_id=1):
     """
@@ -390,7 +378,7 @@ def get_monthly_metrics(session_id, user_id=1):
     monthly_float = calculate_monthly_float(session_id, user_id)
     category_breakdown = get_category_breakdown(session_id, user_id)
     transaction_stats = get_transaction_stats(session_id, user_id)
-    unlinked_payer = get_unlinked_splitwise_payer(session_id, user_id)  # NEW
+    unlinked_payer = get_unlinked_splitwise_payer(session_id, user_id)
     
     return {
         'session_id': session_id,
@@ -399,7 +387,7 @@ def get_monthly_metrics(session_id, user_id=1):
         'monthly_float': monthly_float,
         'category_breakdown': category_breakdown,
         'transaction_stats': transaction_stats,
-        'unlinked_payer': unlinked_payer  # NEW
+        'unlinked_payer': unlinked_payer
     }
 
 
@@ -410,7 +398,7 @@ def print_report(metrics):
     session_id = metrics['session_id']
     net = metrics['net_consumption']
     outflow = metrics['cash_outflow']
-    float_amount = metrics['monthly_float']  # ✅ This is correct
+    float_amount = metrics['monthly_float']
     categories = metrics['category_breakdown']
     stats = metrics['transaction_stats']
     
@@ -430,13 +418,13 @@ def print_report(metrics):
     print(f"🆔 Session: {session_id}")
     
     print("\n" + "─"*70)
-    print("💵 YOUR TRUE SPENDING")
+    print("💵 NET CONSUMPTION (Your True Spending)")
     print("─"*70)
     print(f"   ₹{net['total']:,.2f}")
     print(f"\n   Breakdown:")
-    print(f"   • Solo expenses:         ₹{net['breakdown']['solo']:,.2f}")
-    print(f"   • Your share (you paid): ₹{net['breakdown']['split_you_paid']:,.2f}")
-    print(f"   • Your share (friend paid): ₹{net['breakdown']['split_friend_paid']:,.2f}")
+    print(f"   • Solo Spend:           ₹{net['breakdown']['solo_spend']:,.2f}")
+    print(f"   • My Share (I Paid):    ₹{net['breakdown']['split_i_paid']:,.2f}")
+    print(f"   • My Share (They Paid): ₹{net['breakdown']['split_they_paid']:,.2f}")
     
     print("\n" + "─"*70)
     print("💸 CASH OUTFLOW")
@@ -445,32 +433,18 @@ def print_report(metrics):
     print(f"   (Total money that left your bank account)")
     
     print("\n" + "─"*70)
-    print("📊 THE DIFFERENCE")
+    print("📊 MONTHLY FLOAT")
     print("─"*70)
-
-    difference = outflow - net['total']
-
-    if difference > 0:
-        print(f"   ₹{difference:,.2f}")
-        print(f"   You paid this extra for friends this month")
-        print(f"   (They'll settle via Splitwise)")
-        if float_amount > 0:
-            print(f"\n   💡 Monthly float: ₹{float_amount:,.2f}")
-    elif difference < 0:
-        print(f"   ₹{abs(difference):,.2f}")
-        print(f"   Friends paid this much for you this month")
-        print(f"   (You owe them - check Splitwise)")
-        
-        # Show breakdown if there's complexity
-        if float_amount > 0:
-            you_owe = abs(difference) + float_amount
-            print(f"\n   📊 Breakdown:")
-            print(f"   • Friends owe you: ₹{float_amount:,.2f}")
-            print(f"   • You owe friends: ₹{you_owe:,.2f}")
-            print(f"   • Net: You owe ₹{abs(difference):,.2f}")
-    else:
-        print(f"   ₹0.00")
+    print(f"   ₹{float_amount:,.2f}")
+    
+    if abs(float_amount) < 100:
         print(f"   Perfectly balanced!")
+    elif float_amount > 0:
+        print(f"   You paid ₹{float_amount:,.2f} extra this month")
+        print(f"   (Friends will settle later)")
+    else:
+        print(f"   Friends paid ₹{abs(float_amount):,.2f} extra this month")
+        print(f"   (You may owe them)")
     
     print("\n" + "─"*70)
     print("📈 SPENDING BY CATEGORY")

@@ -15,15 +15,12 @@ def delivery_report(err, msg):
 
 def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1):
     """
-    NEW PARAMETERS:
-    - session_id: Upload session ID  
-    - start_date: Start of selected month
-    - end_date: End of selected month
+    Process splitwise file with skip tracking
     """
     print(f"📂 Processing Splitwise File: {filepath}")
     
     try:
-        # 1. Header Detection (Skip Title Rows)
+        # Header detection (same as before)
         header_row = 0
         with open(filepath, 'r') as f:
             first_line = f.readline()
@@ -35,19 +32,18 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
         producer = get_kafka_producer()
         count = 0
         excluded_count = 0
+        skipped_not_involved = 0  # ✅ NEW counter
 
-        # 2. Iterate and Produce
+        # Iterate and Produce
         for _, row in df.iterrows():
             raw_date = str(row['Date']).strip()
             description = str(row.get('Description', '')).strip()
 
-            # --- STOPPING CONDITIONS ---
-            # 1. Stop at the summary row at the bottom
+            # Stop conditions (same as before)
             if "Total balance" in description:
                 print("🛑 Reached 'Total balance' footer. Stopping.")
                 break
             
-            # 2. Stop at empty rows (End of file)
             if pd.isna(row['Date']) or raw_date == '' or raw_date.lower() == 'nan':
                 print("🛑 Reached empty row. Stopping.")
                 break
@@ -55,11 +51,17 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
             clean_data = normalize_splitwise_row(row, user_id)
         
             if clean_data:
+                # ✅ NEW: Check if should skip
+                if clean_data.get('skip'):
+                    skipped_not_involved += 1
+                    continue
+                
                 transaction_date = clean_data['date']
                 
-                # NEW: Filter by date range
+                # Date range filter
                 if start_date <= transaction_date <= end_date:
-                    # Add session_id
+                    # ✅ Add source field (temporary, for consumer)
+                    clean_data['source'] = 'SPLITWISE'
                     clean_data['upload_session_id'] = session_id
                     
                     producer.produce(
@@ -74,17 +76,19 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
         
         producer.flush()
         print(f"🚀 Successfully sent {count} Splitwise transactions.")
+        print(f"⏭️  Skipped {skipped_not_involved} transactions (not involved)")  # ✅ NEW
         
         return {
             "status": "success",
             "processed": count,
-            "excluded": excluded_count  # NEW
+            "excluded": excluded_count,
+            "skipped_not_involved": skipped_not_involved  # ✅ NEW
         }
 
     except Exception as e:
         print(f"❌ Failed to process file: {e}")
         return {"status": "error", "message": str(e)}
-
+    
 if __name__ == "__main__":
     import sys
     

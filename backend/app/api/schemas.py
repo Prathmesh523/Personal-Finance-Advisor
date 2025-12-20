@@ -21,9 +21,9 @@ class SessionListResponse(BaseModel):
 # ============================================================================
 
 class ConsumptionBreakdown(BaseModel):
-    solo: float
-    split_you_paid: float
-    split_friend_paid: float
+    solo_spend: float
+    split_i_paid: float
+    split_they_paid: float
 
 class NetConsumption(BaseModel):
     total: float

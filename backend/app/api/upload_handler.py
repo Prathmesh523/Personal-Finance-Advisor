@@ -67,9 +67,13 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
         # Step 4: Update session counts
         bank_count = bank_result['processed']
         splitwise_count = splitwise_result['processed']
-        
+        skipped_not_involved = splitwise_result.get('skipped_not_involved', 0)  # ✅ NEW
+
         print(f"✅ Processed: {bank_count} bank, {splitwise_count} splitwise")
-        update_session_counts(session_id, bank_count, splitwise_count, 0)
+        if skipped_not_involved > 0:
+            print(f"⏭️  Skipped: {skipped_not_involved} splitwise (not involved)")  # ✅ NEW
+
+        update_session_counts(session_id, bank_count, splitwise_count, 0, skipped_not_involved)  # ✅ Updated
         
         # Step 5: Run analysis pipeline (linking, categorization)
         print("🧠 Running analysis pipeline...")

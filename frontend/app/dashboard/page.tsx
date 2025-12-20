@@ -137,22 +137,65 @@ export default function DashboardPage() {
         </div>
 
         {/* Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Net Consumption */}
           <MetricCard
             title="Net Consumption"
-            value={formatCurrency(metrics.net_consumption.total)}
+            value={`${formatCurrency(metrics.net_consumption.total)}`}
             subtitle="Your true spending"
+            trend="neutral"
           />
+
+          {/* Solo Spend */}
+          <MetricCard
+            title="Solo Spend"
+            value={`${formatCurrency(metrics.net_consumption.breakdown.solo_spend)}`}
+            subtitle="Unlinked transactions"
+            trend="neutral"
+          />
+
+          {/* My Share (I Paid) */}
+          <MetricCard
+            title="My Share (I Paid)"
+            value={`${formatCurrency(metrics.net_consumption.breakdown.split_i_paid)}`}
+            subtitle="Split expenses you paid"
+            trend="neutral"
+          />
+
+          {/* My Share (They Paid) */}
+          <MetricCard
+            title="My Share (They Paid)"
+            value={`${formatCurrency(metrics.net_consumption.breakdown.split_they_paid)}`}
+            subtitle="Split expenses they paid"
+            trend="neutral"
+          />
+
+          {/* Cash Outflow */}
           <MetricCard
             title="Cash Outflow"
-            value={formatCurrency(metrics.cash_outflow)}
-            subtitle="Money that left your account"
+            value={`${formatCurrency(metrics.cash_outflow)}`}
+            subtitle="Total bank debits"
+            trend="neutral"
           />
+
+          {/* Monthly Float */}
           <MetricCard
-            title="Difference"
-            value={formatCurrency(Math.abs(metrics.difference))}
-            subtitle={getDifferenceSubtitle(metrics.difference)}
-            trend={getDifferenceTrend(metrics.difference)}
+            title="Monthly Float"
+            value={`${formatCurrency(metrics.monthly_float)}`}
+            subtitle={
+              Math.abs(metrics.monthly_float) < 100
+                ? 'Perfectly balanced'
+                : metrics.monthly_float > 0
+                ? 'You paid extra this month'
+                : 'Friends paid extra this month'
+            }
+            trend={
+              Math.abs(metrics.monthly_float) < 100
+                ? 'neutral'
+                : metrics.monthly_float > 0
+                ? 'positive'
+                : 'negative'
+            }
           />
         </div>
 
@@ -168,35 +211,6 @@ export default function DashboardPage() {
             <DailySpendingChart data={dailySpending.daily_spending} />
           )}
         </div>
-
-        {/* Breakdown */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Consumption Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">Solo Expenses</p>
-                <p className="text-2xl font-semibold">
-                  ₹{formatCurrency(metrics.net_consumption.breakdown.solo)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Split (You Paid)</p>
-                <p className="text-2xl font-semibold">
-                  ₹{formatCurrency(metrics.net_consumption.breakdown.split_you_paid)}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Split (Friend Paid)</p>
-                <p className="text-2xl font-semibold">
-                  ₹{formatCurrency(metrics.net_consumption.breakdown.split_friend_paid)}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Warnings */}
         {warnings && warnings.unlinked_payer.count > 0 && (
