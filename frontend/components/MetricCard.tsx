@@ -19,10 +19,10 @@ export function MetricCard({ title, value, subtitle, trend }: MetricCardProps) {
 
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 text-center">
         <CardTitle className="text-sm font-medium text-gray-600">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="text-center">
         <div className="text-3xl font-bold">₹{value}</div>
         {subtitle && (
           <p className={`text-sm mt-1 ${getTrendColor()}`}>{subtitle}</p>

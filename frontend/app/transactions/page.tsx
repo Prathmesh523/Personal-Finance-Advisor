@@ -33,7 +33,6 @@ export default function TransactionsPage() {
 
   // Filters
   const [sourceFilter, setSourceFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Available categories
@@ -57,7 +56,7 @@ export default function TransactionsPage() {
         console.error('Failed to get session info:', err);
       });
     }
-  }, [router, currentPage, sourceFilter, statusFilter, categoryFilter]);
+  }, [router, currentPage, sourceFilter, categoryFilter]);
 
   const fetchTransactions = async (sessionId: string, page: number) => {
     try {
@@ -67,7 +66,6 @@ export default function TransactionsPage() {
       const params: any = { page, limit: 10 };
 
       if (sourceFilter !== 'all') params.source = sourceFilter;
-      if (statusFilter !== 'all') params.status = statusFilter;
       if (categoryFilter !== 'all') params.category = categoryFilter;
 
       const data = await api.getGroupedTransactions(sessionId, params);
@@ -103,7 +101,6 @@ export default function TransactionsPage() {
 
   const resetFilters = () => {
     setSourceFilter('all');
-    setStatusFilter('all');
     setCategoryFilter('all');
     setCurrentPage(1);
   };
@@ -137,8 +134,7 @@ export default function TransactionsPage() {
     );
   }
 
-  const hasActiveFilters =
-    sourceFilter !== 'all' || statusFilter !== 'all' || categoryFilter !== 'all';
+  const hasActiveFilters = sourceFilter !== 'all' || categoryFilter !== 'all';
 
   // Count total transactions across all groups
   const totalTransactions = groups.reduce((sum, group) => sum + group.count, 0);
@@ -170,94 +166,72 @@ export default function TransactionsPage() {
         </div>
 
         {/* Filters */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              {/* Source Filter */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Source</label>
-                <Select
-                  value={sourceFilter}
-                  onValueChange={(val) => {
-                    setSourceFilter(val);
-                    handleFilterChange();
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Sources</SelectItem>
-                    <SelectItem value="BANK">Bank</SelectItem>
-                    <SelectItem value="SPLITWISE">Splitwise</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Status Filter */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Status</label>
-                <Select
-                  value={statusFilter}
-                  onValueChange={(val) => {
-                    setStatusFilter(val);
-                    handleFilterChange();
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="LINKED">Linked</SelectItem>
-                    <SelectItem value="UNLINKED">Unlinked</SelectItem>
-                    <SelectItem value="TRANSFER">Transfer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Category Filter */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Category</label>
-                <Select
-                  value={categoryFilter}
-                  onValueChange={(val) => {
-                    setCategoryFilter(val);
-                    handleFilterChange();
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Reset Button */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium invisible">Action</label>
-                <Button
-                  variant="outline"
-                  onClick={resetFilters}
-                  disabled={!hasActiveFilters}
-                  className="w-full"
-                >
-                  Reset Filters
-                </Button>
-              </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Source Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Source</label>
+              <Select
+                value={sourceFilter}
+                onValueChange={(val) => {
+                  setSourceFilter(val);
+                  handleFilterChange();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="BANK">Bank</SelectItem>
+                  <SelectItem value="SPLITWISE">Splitwise</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Category Filter */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Category</label>
+              <Select
+                value={categoryFilter}
+                onValueChange={(val) => {
+                  setCategoryFilter(val);
+                  handleFilterChange();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Reset Button */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium invisible">Action</label>
+              <Button
+                variant="outline"
+                onClick={resetFilters}
+                disabled={!hasActiveFilters}
+                className="w-full"
+              >
+                Reset Filters
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
         {/* Grouped Transactions */}
         <GroupedTransactionList

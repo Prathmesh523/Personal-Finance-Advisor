@@ -24,10 +24,9 @@ def calculate_net_consumption(session_id, user_id=1):
     # 1. Solo Spend (unlinked bank, exclude self-transfers)
     cur.execute("""
         SELECT COALESCE(SUM(ABS(amount)), 0)
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'BANK'
           AND amount < 0
           AND status = 'UNLINKED'
           AND category NOT IN ('Self Transfer')
@@ -35,32 +34,24 @@ def calculate_net_consumption(session_id, user_id=1):
     
     solo_spend = float(cur.fetchone()[0])
     
-    # 2. My Share (I Paid) - where splitwise column > 0
-    # Exclude settlements (category='Payment' or 'Settlement')
+    # 2. My Share (I Paid) - where role = PAYER (not settlements)
     cur.execute("""
-        SELECT COALESCE(SUM(meta_total_bill - ABS(amount)), 0)
-        FROM transactions
+        SELECT COALESCE(SUM(my_share), 0)
+        FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'SPLITWISE'
-          AND amount < 0
-          AND meta_total_bill > ABS(amount)
-          AND category NOT IN ('Payment', 'Settlement')
+          AND role = 'PAYER'
     """, (session_id, user_id))
     
     split_i_paid = float(cur.fetchone()[0])
     
-    # 3. My Share (They Paid) - where splitwise column < 0
-    # Exclude settlements
+    # 3. My Share (They Paid) - where role = BORROWER
     cur.execute("""
-        SELECT COALESCE(SUM(ABS(amount)), 0)
-        FROM transactions
+        SELECT COALESCE(SUM(my_share), 0)
+        FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'SPLITWISE'
-          AND amount < 0
-          AND (meta_total_bill IS NULL OR meta_total_bill <= ABS(amount))
-          AND category NOT IN ('Payment', 'Settlement')
+          AND role = 'BORROWER'
     """, (session_id, user_id))
     
     split_they_paid = float(cur.fetchone()[0])
@@ -82,27 +73,15 @@ def calculate_net_consumption(session_id, user_id=1):
 def calculate_cash_outflow(session_id, user_id=1):
     """
     Calculate total money that left your bank account
-    
-    Includes:
-    - Solo expenses
-    - Split expenses (where you paid)
-    - Settlements (paying back debts)
-    
-    Excludes:
-    - Investments (Zerodha, Groww, etc.)
-    - Credit card payments (just moving debt)
-    - Savings transfers (money didn't leave, just moved)
-    - Self transfers (between your own accounts)
     """
     conn = get_db_connection()
     cur = conn.cursor()
     
     cur.execute("""
         SELECT COALESCE(SUM(ABS(amount)), 0)
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'BANK'
           AND amount < 0
     """, (session_id, user_id))
     
@@ -116,9 +95,6 @@ def calculate_cash_outflow(session_id, user_id=1):
 def calculate_monthly_float(session_id, user_id=1):
     """
     Calculate monthly float (difference between cash outflow and net consumption)
-    
-    Positive: You paid extra this month
-    Negative: Friends paid extra this month
     """
     net_consumption = calculate_net_consumption(session_id, user_id)
     cash_outflow = calculate_cash_outflow(session_id, user_id)
@@ -135,26 +111,16 @@ def get_category_breakdown(session_id, user_id=1):
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # Category normalization map - merge similar categories
-    CATEGORY_MAPPING = {
-        'General': 'Other',
-        'Uncategorized': 'Other',
-        'Gas/fuel': 'Transport',
-        'Bus/train': 'Transport',
-        'Utilities - Other': 'Bills & Utilities',
-    }
-    
     category_totals = {}
     
-    # 1. Solo expenses (unlinked bank) - use bank category
+    # 1. Solo expenses (unlinked bank)
     cur.execute("""
         SELECT 
             category,
             SUM(ABS(amount)) as total_amount
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'BANK'
           AND amount < 0
           AND status = 'UNLINKED'
           AND category NOT IN ('Settlement', 'Investment', 'Credit Card', 'Savings', 'Self Transfer')
@@ -163,22 +129,18 @@ def get_category_breakdown(session_id, user_id=1):
     
     for row in cur.fetchall():
         raw_category = row[0] or 'Other'
-        # Apply mapping
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         amount = float(row[1])
-        
-        # Merge into totals
         category_totals[category] = category_totals.get(category, 0) + amount
     
-    # 2. Split expenses (you paid) - use Splitwise category with YOUR SHARE
+    # 2. Split expenses (you paid) - use YOUR SHARE
     cur.execute("""
         SELECT 
             category,
-            SUM(meta_total_bill - ABS(amount)) as your_share
-        FROM transactions
+            SUM(my_share) as your_share
+        FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'SPLITWISE'
           AND role = 'PAYER'
           AND status = 'LINKED'
         GROUP BY category
@@ -186,33 +148,26 @@ def get_category_breakdown(session_id, user_id=1):
     
     for row in cur.fetchall():
         raw_category = row[0] or 'Other'
-        # Apply mapping
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         your_share = float(row[1])
-        
-        # Merge into totals
         category_totals[category] = category_totals.get(category, 0) + your_share
     
-    # 3. Split expenses (friend paid) - use Splitwise category
+    # 3. Split expenses (friend paid) - use YOUR SHARE
     cur.execute("""
         SELECT 
             category,
-            SUM(ABS(amount)) as your_share
-        FROM transactions
+            SUM(my_share) as your_share
+        FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'SPLITWISE'
           AND role = 'BORROWER'
         GROUP BY category
     """, (session_id, user_id))
     
     for row in cur.fetchall():
         raw_category = row[0] or 'Other'
-        # Apply mapping
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         amount = float(row[1])
-        
-        # Merge into totals
         category_totals[category] = category_totals.get(category, 0) + amount
     
     cur.close()
@@ -246,17 +201,18 @@ def get_transaction_stats(session_id, user_id=1):
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # Total transactions
+    # Total transactions (both tables)
     cur.execute("""
-        SELECT COUNT(*) FROM transactions
-        WHERE upload_session_id = %s AND user_id = %s
-    """, (session_id, user_id))
+        SELECT 
+            (SELECT COUNT(*) FROM bank_transactions WHERE upload_session_id = %s AND user_id = %s) +
+            (SELECT COUNT(*) FROM splitwise_transactions WHERE upload_session_id = %s AND user_id = %s)
+    """, (session_id, user_id, session_id, user_id))
     total_count = cur.fetchone()[0]
     
-    # Status breakdown
+    # Status breakdown (bank)
     cur.execute("""
         SELECT status, COUNT(*) 
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s AND user_id = %s
         GROUP BY status
     """, (session_id, user_id))
@@ -264,31 +220,35 @@ def get_transaction_stats(session_id, user_id=1):
     
     # Source breakdown
     cur.execute("""
-        SELECT source, COUNT(*) 
-        FROM transactions
-        WHERE upload_session_id = %s AND user_id = %s
-        GROUP BY source
-    """, (session_id, user_id))
+        SELECT 
+            'BANK' as source,
+            (SELECT COUNT(*) FROM bank_transactions WHERE upload_session_id = %s AND user_id = %s)
+        UNION ALL
+        SELECT 
+            'SPLITWISE' as source,
+            (SELECT COUNT(*) FROM splitwise_transactions WHERE upload_session_id = %s AND user_id = %s)
+    """, (session_id, user_id, session_id, user_id))
     source_breakdown = {row[0]: row[1] for row in cur.fetchall()}
     
-    # Average transaction
+    # Average transaction (bank only, expenses only)
     cur.execute("""
         SELECT AVG(ABS(amount))
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s 
           AND user_id = %s
           AND status != 'TRANSFER'
+          AND amount < 0
     """, (session_id, user_id))
     avg_transaction = float(cur.fetchone()[0] or 0)
     
-    # Largest expense
+    # Largest expense (bank)
     cur.execute("""
         SELECT description, ABS(amount), category
-        FROM transactions
+        FROM bank_transactions
         WHERE upload_session_id = %s 
           AND user_id = %s
           AND status != 'TRANSFER'
-          AND amount<0 
+          AND amount < 0 
         ORDER BY ABS(amount) DESC
         LIMIT 1
     """, (session_id, user_id))
@@ -323,13 +283,12 @@ def get_unlinked_splitwise_payer(session_id, user_id=1):
         SELECT 
             date,
             description,
-            meta_total_bill as total_bill,
-            ABS(amount) as your_actual_share,
+            total_cost,
+            my_share,
             category
-        FROM transactions
+        FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
-          AND source = 'SPLITWISE'
           AND role = 'PAYER'
           AND status = 'UNLINKED'
         ORDER BY date DESC
@@ -343,23 +302,22 @@ def get_unlinked_splitwise_payer(session_id, user_id=1):
     total_amount = 0
     
     for row in results:
-        date, desc, total_bill, your_actual_share, category = row
-        total_bill = float(total_bill) if total_bill else 0
-        your_actual_share = float(your_actual_share)
+        date, desc, total_cost, my_share, category = row
+        total_cost = float(total_cost) if total_cost else 0
+        my_share = float(my_share)
         
         # What friends owe you = total - your share
-        # If you paid ₹170 and your share is ₹0, they owe ₹170
-        owed_to_you = total_bill - your_actual_share
+        owed_to_you = total_cost - my_share
         
         unlinked.append({
             'date': date,
             'description': desc,
-            'total_bill': total_bill,
-            'your_share': your_actual_share,  # ✅ What you actually consumed
-            'owed_to_you': owed_to_you,      # ✅ What they owe you
+            'total_bill': total_cost,
+            'your_share': my_share,
+            'owed_to_you': owed_to_you,
             'category': category
         })
-        total_amount += total_bill
+        total_amount += total_cost
     
     return {
         'count': len(unlinked),
@@ -452,7 +410,7 @@ def print_report(metrics):
     
     if categories:
         for cat in categories[:10]:  # Top 10
-            bar_length = int(cat['percentage'] / 2)  # Scale for display
+            bar_length = int(cat['percentage'] / 2)
             bar = "█" * bar_length
             print(f"   {cat['category']:20} ₹{cat['amount']:>10,.2f} ({cat['percentage']:>5.1f}%) {bar}")
     else:
@@ -462,7 +420,7 @@ def print_report(metrics):
     print("📊 TRANSACTION SUMMARY")
     print("─"*70)
     print(f"   Total processed:  {stats['total_transactions']}")
-    print(f"   Linked pairs:     {stats['status_breakdown'].get('LINKED', 0) // 2}")
+    print(f"   Linked pairs:     {stats['status_breakdown'].get('LINKED', 0)}")
     print(f"   Settlements:      {stats['status_breakdown'].get('TRANSFER', 0)}")
     
     if stats['largest_expense']:
@@ -483,20 +441,15 @@ def print_report(metrics):
         print("   Review them to verify:")
         print()
         
-        for txn in unlinked_payer['transactions'][:5]:  # Show max 5
+        for txn in unlinked_payer['transactions'][:5]:
             owed = txn['owed_to_you']
-            total = txn['total_bill']
-            your_share = total - owed if total > owed else 0
+            your_share = txn['your_share']
             
-            print(f"   • {txn['date']} | ₹{total:,.2f} - {txn['description'][:40]}")
+            print(f"   • {txn['date']} | ₹{txn['total_bill']:,.2f} - {txn['description'][:40]}")
             print(f"     Your share: ₹{your_share:,.2f} | Friends owe: ₹{owed:,.2f}")
         
         if unlinked_payer['count'] > 5:
             print(f"\n   ... and {unlinked_payer['count'] - 5} more")
-        
-        print("\n   💡 Tip: These are counted in 'Solo expenses' above.")
-        print("      If they match bank transactions, no issue.")
-        print("      If not, your true spending might be higher.")
     
     print("\n" + "="*70)
     print("✅ ANALYSIS COMPLETE")

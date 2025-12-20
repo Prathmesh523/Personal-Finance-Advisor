@@ -64,11 +64,16 @@ export interface Transaction {
   description: string;
   amount: number;
   category: string | null;
-  source: 'BANK' | 'SPLITWISE';
-  status: 'LINKED' | 'UNLINKED' | 'TRANSFER';
-  link_id?: number;
-  match_confidence?: number;
-  match_method?: string;
+  source: string;
+  txn_type: 'independent' | 'linked';
+  status: string;
+  link_id?: number | null;
+  match_confidence?: number | null;
+  match_method?: string | null;
+  bank_amount?: number | null;
+  my_share?: number | null;
+  split_percentage?: number | null;
+  role?: string | null;  // ADD THIS
 }
 
 export interface TransactionList {

@@ -136,67 +136,97 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Metrics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {/* Net Consumption */}
-          <MetricCard
-            title="Net Consumption"
-            value={`${formatCurrency(metrics.net_consumption.total)}`}
-            subtitle="Your true spending"
-            trend="neutral"
-          />
+        {/* Metrics Cards - New 1:2:1 Layout */}
+        <div className="grid grid-cols-4 gap-6 mb-8">
+          {/* Cash Outflow - 1 column */}
+          <div className="col-span-1">
+            <MetricCard
+              title="Cash Outflow"
+              value={formatCurrency(metrics.cash_outflow)}
+              subtitle="Total bank debits"
+              trend="neutral"
+            />
+          </div>
 
-          {/* Solo Spend */}
-          <MetricCard
-            title="Solo Spend"
-            value={`${formatCurrency(metrics.net_consumption.breakdown.solo_spend)}`}
-            subtitle="Unlinked transactions"
-            trend="neutral"
-          />
+          {/* Net Consumption - 2 columns (wider, with nested breakdown) */}
+          <div className="col-span-2">
+            <Card>
+              <CardHeader className="pb-3 text-center">
+                <CardTitle className="text-sm font-medium text-gray-600">
+                  Net Consumption
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center mb-4">
+                  <div className="text-3xl font-bold mb-1">
+                    ₹{formatCurrency(metrics.net_consumption.total)}
+                  </div>
+                  <p className="text-sm text-gray-600">Your true spending</p>
+                </div>
 
-          {/* My Share (I Paid) */}
-          <MetricCard
-            title="My Share (I Paid)"
-            value={`${formatCurrency(metrics.net_consumption.breakdown.split_i_paid)}`}
-            subtitle="Split expenses you paid"
-            trend="neutral"
-          />
+                {/* Nested 3 sub-metrics - IMPROVED ALIGNMENT */}
+                <div className="grid grid-cols-3 gap-3 mt-4">
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                    <p className="text-xs font-medium text-gray-600 mb-2">
+                      Independent<br/> Spends
+                    </p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{formatCurrency(metrics.net_consumption.breakdown.solo_spend)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {((metrics.net_consumption.breakdown.solo_spend / metrics.net_consumption.total) * 100).toFixed(0)}%
+                    </p>
+                  </div>
 
-          {/* My Share (They Paid) */}
-          <MetricCard
-            title="My Share (They Paid)"
-            value={`${formatCurrency(metrics.net_consumption.breakdown.split_they_paid)}`}
-            subtitle="Split expenses they paid"
-            trend="neutral"
-          />
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                    <p className="text-xs font-medium text-gray-600 mb-2">
+                      My Share<br/>(Splits I Paid)
+                    </p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{formatCurrency(metrics.net_consumption.breakdown.split_i_paid)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {((metrics.net_consumption.breakdown.split_i_paid / metrics.net_consumption.total) * 100).toFixed(0)}%
+                    </p>
+                  </div>
 
-          {/* Cash Outflow */}
-          <MetricCard
-            title="Cash Outflow"
-            value={`${formatCurrency(metrics.cash_outflow)}`}
-            subtitle="Total bank debits"
-            trend="neutral"
-          />
+                  <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+                    <p className="text-xs font-medium text-gray-600 mb-2">
+                      My Share<br/>(Splits Others Paid)
+                    </p>
+                    <p className="text-xl font-bold text-gray-900">
+                      ₹{formatCurrency(metrics.net_consumption.breakdown.split_they_paid)}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      {((metrics.net_consumption.breakdown.split_they_paid / metrics.net_consumption.total) * 100).toFixed(0)}%
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
-          {/* Monthly Float */}
-          <MetricCard
-            title="Monthly Float"
-            value={`${formatCurrency(metrics.monthly_float)}`}
-            subtitle={
-              Math.abs(metrics.monthly_float) < 100
-                ? 'Perfectly balanced'
-                : metrics.monthly_float > 0
-                ? 'You paid extra this month'
-                : 'Friends paid extra this month'
-            }
-            trend={
-              Math.abs(metrics.monthly_float) < 100
-                ? 'neutral'
-                : metrics.monthly_float > 0
-                ? 'positive'
-                : 'negative'
-            }
-          />
+          {/* Monthly Float - 1 column */}
+          <div className="col-span-1">
+            <MetricCard
+              title="Monthly Float"
+              value={formatCurrency(Math.abs(metrics.monthly_float))}
+              subtitle={
+                Math.abs(metrics.monthly_float) < 100
+                  ? 'Perfectly balanced'
+                  : metrics.monthly_float > 0
+                  ? 'You paid extra'
+                  : 'Friends paid extra'
+              }
+              trend={
+                Math.abs(metrics.monthly_float) < 100
+                  ? 'neutral'
+                  : metrics.monthly_float > 0
+                  ? 'positive'
+                  : 'negative'
+              }
+            />
+          </div>
         </div>
 
         {/* Charts - Stacked Vertically */}

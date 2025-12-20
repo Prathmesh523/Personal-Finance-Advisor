@@ -111,15 +111,70 @@ export function GroupedTransactionList({
             {/* Transactions */}
             <div className="space-y-3">
               {group.transactions.map((txn) => {
+                // TYPE 3: Linked Transaction
+                if (txn.txn_type === 'linked') {
+                  return (
+                    <div
+                      key={txn.id}
+                      className="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg border-2 border-blue-200"
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="text-2xl">🔗</div>
+                          <div>
+                            <p className="font-semibold text-gray-900">{txn.description}</p>
+                            <p className="text-xs text-gray-500">{txn.category || 'Uncategorized'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 mb-3 text-sm">
+                        <div className="bg-white/60 p-2 rounded">
+                          <p className="text-xs text-gray-600">Bank Payment</p>
+                          <p className="font-semibold text-gray-900">
+                            ₹{Math.abs(txn.bank_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                        <div className="bg-white/60 p-2 rounded">
+                          <p className="text-xs text-gray-600">Your Share</p>
+                          <p className="font-semibold text-gray-900">
+                            ₹{(txn.my_share || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                            {txn.split_percentage && (
+                              <span className="text-xs text-gray-500 ml-1">({txn.split_percentage}%)</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                          ✓ Matched
+                        </span>
+                        <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
+                          Bank • Splitwise
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // TYPE 1 & 2: Independent Transactions
                 const Icon = getCategoryIcon(txn.category);
+                const isBank = txn.source === 'BANK';
+                const isSplitwise = txn.source === 'SPLITWISE';
+
                 return (
                   <div
                     key={txn.id}
                     className="flex items-center gap-4 p-3 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     {/* Icon */}
-                    <div className={`p-2 rounded-full ${getSourceColor(txn.source)}`}>
-                      <Icon className="w-5 h-5 text-gray-700" />
+                    <div className={`p-2 rounded-full ${isBank ? 'bg-purple-100' : 'bg-orange-100'}`}>
+                      {isBank ? (
+                        <span className="text-xl">🏦</span>
+                      ) : (
+                        <span className="text-xl">👥</span>
+                      )}
                     </div>
 
                     {/* Details */}
@@ -127,9 +182,20 @@ export function GroupedTransactionList({
                       <p className="font-medium text-gray-900 truncate">
                         {txn.description}
                       </p>
-                      <p className="text-sm text-gray-500">
-                        {txn.category || 'Uncategorized'} • {txn.source}
-                      </p>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span>{txn.category || 'Uncategorized'}</span>
+                        <span>•</span>
+                        <span>{txn.source}</span>
+                        {isSplitwise && txn.role === 'PAYER' && txn.status === 'UNLINKED' && (
+                          <>
+                            <span>•</span>
+                            <span className="text-orange-600">⚠️ Unmatched</span>
+                          </>
+                        )}
+                      </div>
+                      {isSplitwise && txn.role === 'BORROWER' && (
+                        <p className="text-xs text-gray-500 mt-1">Friend paid for you</p>
+                      )}
                     </div>
 
                     {/* Amount */}
@@ -141,8 +207,8 @@ export function GroupedTransactionList({
                       >
                         {formatCurrency(txn.amount)}
                       </p>
-                      {txn.status === 'LINKED' && (
-                        <span className="text-xs text-green-600">Linked</span>
+                      {isSplitwise && (
+                        <p className="text-xs text-gray-500">Your share</p>
                       )}
                     </div>
                   </div>

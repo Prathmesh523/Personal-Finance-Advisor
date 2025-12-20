@@ -37,24 +37,6 @@ def health_check():
         "service": "finance-advisor-api"
     }
 
-@router.get("/test-db")
-def test_database():
-    """Test database connection"""
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM transactions")
-        count = cur.fetchone()[0]
-        cur.close()
-        conn.close()
-        
-        return {
-            "status": "connected",
-            "total_transactions": count
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
-
 # ============================================================================
 # UPLOAD ENDPOINT
 # ============================================================================
@@ -276,31 +258,65 @@ def get_session_transactions(
             cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="Session not found")
-        
+
         # Build query with filters
-        where_clauses = ["upload_session_id = %s"]
-        params = [session_id]
+        where_clauses = []
+        params = []
         
-        if source:
-            where_clauses.append("source = %s")
-            params.append(source)
+        # We need UNION of both tables
+        if source == 'BANK' or source is None:
+            bank_query = """
+                SELECT 
+                    id, date, description, amount, category, 
+                    'BANK' as source, status, linked_splitwise_id as link_id, 
+                    match_confidence, match_method
+                FROM bank_transactions
+                WHERE upload_session_id = %s AND user_id = %s
+            """
+            bank_params = [session_id, user_id]
+            
+            if status:
+                bank_query += " AND status = %s"
+                bank_params.append(status)
+            
+            if category:
+                bank_query += " AND category = %s"
+                bank_params.append(category)
         
-        if status:
-            where_clauses.append("status = %s")
-            params.append(status)
+        if source == 'SPLITWISE' or source is None:
+            split_query = """
+                SELECT 
+                    id, date, description, 
+                    CASE WHEN role = 'PAYER' THEN -total_cost ELSE -my_share END as amount,
+                    category, 'SPLITWISE' as source, status, 
+                    linked_bank_id as link_id, match_confidence, match_method
+                FROM splitwise_transactions
+                WHERE upload_session_id = %s AND user_id = %s
+            """
+            split_params = [session_id, user_id]
+            
+            if status:
+                split_query += " AND status = %s"
+                split_params.append(status)
+            
+            if category:
+                split_query += " AND category = %s"
+                split_params.append(category)
         
-        if category:
-            where_clauses.append("category = %s")
-            params.append(category)
-        
-        where_clause = " AND ".join(where_clauses)
+        # Combine queries
+        if source == 'BANK':
+            final_query = bank_query
+            params = bank_params
+        elif source == 'SPLITWISE':
+            final_query = split_query
+            params = split_params
+        else:
+            final_query = f"({bank_query}) UNION ALL ({split_query})"
+            params = bank_params + split_params
         
         # Get total count
-        cur.execute(f"""
-            SELECT COUNT(*) 
-            FROM transactions 
-            WHERE {where_clause}
-        """, params)
+        count_query = f"SELECT COUNT(*) FROM ({final_query}) as combined"
+        cur.execute(count_query, params)
         total = cur.fetchone()[0]
         
         # Calculate pagination
@@ -308,16 +324,13 @@ def get_session_transactions(
         total_pages = math.ceil(total / limit) if total > 0 else 1
         
         # Get paginated transactions
-        cur.execute(f"""
-            SELECT 
-                id, date, description, amount, category, 
-                source, status, link_id, match_confidence, match_method
-            FROM transactions
-            WHERE {where_clause}
+        paginated_query = f"""
+            SELECT * FROM ({final_query}) as combined
             ORDER BY date DESC
             LIMIT %s OFFSET %s
-        """, params + [limit, offset])
-        
+        """
+        cur.execute(paginated_query, params + [limit, offset])
+
         transactions = []
         for row in cur.fetchall():
             transactions.append(Transaction(
@@ -415,18 +428,27 @@ def get_session_status(session_id: str):
         
         session_id, status, month, bank_count, splitwise_count, created_at = result
         
-        # Get processing progress
+        # Get processing progress from BOTH tables
         cur.execute("""
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN status = 'LINKED' THEN 1 ELSE 0 END) as linked,
                 SUM(CASE WHEN status = 'TRANSFER' THEN 1 ELSE 0 END) as transfers
-            FROM transactions
+            FROM bank_transactions
             WHERE upload_session_id = %s
         """, (session_id,))
         
-        progress_result = cur.fetchone()
-        total, linked, transfers = progress_result if progress_result else (0, 0, 0)
+        bank_result = cur.fetchone()
+        bank_total, bank_linked, bank_transfers = bank_result if bank_result else (0, 0, 0)
+        
+        # Get splitwise linked count
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM splitwise_transactions
+            WHERE upload_session_id = %s AND status = 'LINKED'
+        """, (session_id,))
+        
+        split_linked = cur.fetchone()[0] or 0
         
         cur.close()
         conn.close()
@@ -438,9 +460,9 @@ def get_session_status(session_id: str):
             progress={
                 "bank_processed": bank_count or 0,
                 "splitwise_processed": splitwise_count or 0,
-                "total_transactions": total,
-                "linked_pairs": (linked or 0) // 2,
-                "settlements": transfers or 0
+                "total_transactions": (bank_count or 0) + (splitwise_count or 0),
+                "linked_pairs": (bank_linked or 0),  # Count from bank side only
+                "settlements": bank_transfers or 0
             },
             created_at=created_at
         )
@@ -449,7 +471,7 @@ def get_session_status(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+      
 @router.get("/sessions/{session_id}/daily-spending")
 def get_daily_spending(session_id: str):
     """
@@ -471,15 +493,33 @@ def get_daily_spending(session_id: str):
         cur.execute("""
             SELECT 
                 date,
-                SUM(ABS(amount)) as total_spent,
-                COUNT(*) as transaction_count
-            FROM transactions
-            WHERE upload_session_id = %s
-              AND amount < 0
-              AND status != 'TRANSFER'
+                SUM(total_spent) as total_spent,
+                SUM(transaction_count) as transaction_count
+            FROM (
+                SELECT 
+                    date,
+                    SUM(ABS(amount)) as total_spent,
+                    COUNT(*) as transaction_count
+                FROM bank_transactions
+                WHERE upload_session_id = %s
+                  AND amount < 0
+                  AND status != 'TRANSFER'
+                GROUP BY date
+                
+                UNION ALL
+                
+                SELECT 
+                    date,
+                    SUM(my_share) as total_spent,
+                    COUNT(*) as transaction_count
+                FROM splitwise_transactions
+                WHERE upload_session_id = %s
+                  AND role IN ('PAYER', 'BORROWER')
+                GROUP BY date
+            ) as combined
             GROUP BY date
             ORDER BY date ASC
-        """, (session_id,))
+        """, (session_id, session_id))
         
         daily_data = []
         for row in cur.fetchall():
@@ -501,18 +541,21 @@ def get_daily_spending(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.get("/sessions/{session_id}/transactions/grouped")
 def get_grouped_transactions(
     session_id: str,
     source: Optional[str] = Query(None, description="Filter by source (BANK or SPLITWISE)"),
-    status: Optional[str] = Query(None, description="Filter by status (LINKED, UNLINKED, TRANSFER)"),
+    status: Optional[str] = Query(None, description="Filter by status"),
     category: Optional[str] = Query(None, description="Filter by category"),
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(20, ge=1, le=100, description="Items per page")
 ):
     """
-    Get transactions grouped by date
+    Get transactions grouped by date with 3 types:
+    1. Independent Bank
+    2. Independent Splitwise  
+    3. Linked (merged)
     """
     try:
         conn = get_db_connection()
@@ -525,35 +568,81 @@ def get_grouped_transactions(
             conn.close()
             raise HTTPException(status_code=404, detail="Session not found")
         
-        # Build query with filters
-        where_clauses = ["upload_session_id = %s"]
-        params = [session_id]
+        user_id = 1
+        all_transactions = []
         
-        if source:
-            where_clauses.append("source = %s")
-            params.append(source)
-        
-        if status:
-            where_clauses.append("status = %s")
-            params.append(status)
-        
+        # Build WHERE conditions for category filter
+        category_filter = ""
+        category_params = []
         if category:
-            where_clauses.append("category = %s")
-            params.append(category)
+            category_filter = " AND category = %s"
+            category_params = [category]
         
-        where_clause = " AND ".join(where_clauses)
+        # TYPE 1: Independent Bank Transactions
+        if source in [None, 'BANK']:
+            cur.execute(f"""
+                SELECT 
+                    id, date, description, amount, category,
+                    'BANK' as source, 'independent' as txn_type,
+                    status, NULL as link_id, NULL as match_confidence, NULL as match_method,
+                    NULL as bank_amount, NULL as my_share, NULL as split_percentage
+                FROM bank_transactions
+                WHERE upload_session_id = %s
+                  AND user_id = %s
+                  AND status = 'UNLINKED'
+                  {category_filter}
+                ORDER BY date DESC, id DESC
+            """, [session_id, user_id] + category_params)
+            
+            all_transactions.extend(cur.fetchall())
         
-        # Get all transactions for grouping
-        cur.execute(f"""
-            SELECT 
-                id, date, description, amount, category, 
-                source, status, link_id, match_confidence, match_method
-            FROM transactions
-            WHERE {where_clause}
-            ORDER BY date DESC, id DESC
-        """, params)
+        # TYPE 2: Independent Splitwise Transactions
+        if source in [None, 'SPLITWISE']:
+            cur.execute(f"""
+                SELECT 
+                    id, date, description, -my_share as amount, category,
+                    'SPLITWISE' as source, 'independent' as txn_type,
+                    status, NULL as link_id, NULL as match_confidence, NULL as match_method,
+                    NULL as bank_amount, my_share, NULL as split_percentage,
+                    role  -- ADD THIS
+                FROM splitwise_transactions
+                WHERE upload_session_id = %s
+                AND user_id = %s
+                AND status = 'UNLINKED'
+                {category_filter}
+                ORDER BY date DESC, id DESC
+            """, [session_id, user_id] + category_params)
+            
+            all_transactions.extend(cur.fetchall())
         
-        all_transactions = cur.fetchall()
+        # TYPE 3: Linked Transactions (merged)
+        if source in [None, 'BANK', 'SPLITWISE']:
+            # Build category filter with table prefix
+            linked_category_filter = ""
+            if category:
+                linked_category_filter = " AND b.category = %s"  # Specify b.category
+            
+            cur.execute(f"""
+                SELECT 
+                    b.id, b.date, s.description, b.amount, b.category,
+                    'LINKED' as source, 'linked' as txn_type,
+                    b.status, b.linked_splitwise_id as link_id, 
+                    b.match_confidence, b.match_method,
+                    b.amount as bank_amount, s.my_share,
+                    ROUND((s.my_share / s.total_cost * 100)::numeric, 0) as split_percentage
+                FROM bank_transactions b
+                JOIN splitwise_transactions s ON b.linked_splitwise_id = s.id
+                WHERE b.upload_session_id = %s
+                AND b.user_id = %s
+                AND b.status = 'LINKED'
+                {linked_category_filter}
+                ORDER BY b.date DESC, b.id DESC
+            """, [session_id, user_id] + category_params)
+            
+            all_transactions.extend(cur.fetchall())
+        
+        # Sort all by date
+        all_transactions.sort(key=lambda x: (x[1], x[0]), reverse=True)
         
         # Group by date
         from collections import defaultdict
@@ -561,18 +650,26 @@ def get_grouped_transactions(
         
         for row in all_transactions:
             date_str = row[1].isoformat()
-            grouped[date_str].append({
+            
+            txn_obj = {
                 'id': row[0],
                 'date': date_str,
                 'description': row[2],
                 'amount': float(row[3]),
                 'category': row[4],
                 'source': row[5],
-                'status': row[6],
-                'link_id': row[7],
-                'match_confidence': float(row[8]) if row[8] else None,
-                'match_method': row[9]
-            })
+                'txn_type': row[6],
+                'status': row[7],
+                'link_id': row[8],
+                'match_confidence': float(row[9]) if row[9] else None,
+                'match_method': row[10],
+                'bank_amount': float(row[11]) if row[11] else None,
+                'my_share': float(row[12]) if row[12] else None,
+                'split_percentage': int(row[13]) if row[13] else None,
+                'role': row[14] if len(row) > 14 else None
+            }
+            
+            grouped[date_str].append(txn_obj)
         
         # Convert to list of groups
         groups = []
@@ -609,7 +706,6 @@ def get_grouped_transactions(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/sessions/available", response_model=AvailableSessionsResponse)
 def get_available_sessions():
@@ -745,22 +841,22 @@ def compare_sessions(
         increases.sort(key=lambda x: x['difference'], reverse=True)
         decreases.sort(key=lambda x: x['difference'])
         
-        # Daily averages
+        # Daily averages - count distinct days from bank transactions
         cur.execute("""
             SELECT COUNT(DISTINCT date)
-            FROM transactions
+            FROM bank_transactions
             WHERE upload_session_id = %s
-              AND amount < 0
-              AND status != 'TRANSFER'
+            AND amount < 0
+            AND status != 'TRANSFER'
         """, (session1,))
         days1 = cur.fetchone()[0] or 1
-        
+
         cur.execute("""
             SELECT COUNT(DISTINCT date)
-            FROM transactions
+            FROM bank_transactions
             WHERE upload_session_id = %s
-              AND amount < 0
-              AND status != 'TRANSFER'
+            AND amount < 0
+            AND status != 'TRANSFER'
         """, (session2,))
         days2 = cur.fetchone()[0] or 1
         
