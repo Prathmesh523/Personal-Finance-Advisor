@@ -5,7 +5,7 @@
 import { useRouter, usePathname } from 'next/navigation';
 import { storage } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Receipt, GitCompare, Upload } from 'lucide-react';
+import { LayoutDashboard, Receipt, GitCompare, Upload, Link} from 'lucide-react';
 import { useEffect, useState } from 'react'; // ✅ ADD THIS
 
 export function Sidebar() {
@@ -32,6 +32,7 @@ export function Sidebar() {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/transactions', label: 'Transactions', icon: Receipt },
+    { path: '/linking', label: 'Link Transactions', icon: Link },  // ADD THIS
     { path: '/compare', label: 'Compare', icon: GitCompare },
   ];
 

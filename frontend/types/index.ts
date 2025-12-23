@@ -181,3 +181,29 @@ export interface ComparisonResponse {
   top_increases: CategoryComparison[];
   top_decreases: CategoryComparison[];
 }
+
+export interface SuggestedMatch {
+  id: number;
+  date: string;
+  description: string;
+  amount: number;
+  category: string | null;
+  match_score: number;
+  match_reason: string;
+}
+
+export interface UnmatchedSplitwise {
+  id: number;
+  date: string;
+  description: string;
+  total_cost: number;
+  my_share: number;
+  category: string | null;
+  suggested_matches: SuggestedMatch[];
+  preselect_id: number | null;
+}
+
+export interface UnmatchedResponse {
+  unmatched: UnmatchedSplitwise[];
+  count: number;
+}

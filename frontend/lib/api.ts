@@ -11,7 +11,8 @@ import {
   DailySpendingResponse,
   GroupedTransactionsResponse,
   AvailableSessionsResponse,
-  ComparisonResponse
+  ComparisonResponse,
+  UnmatchedResponse
 } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
@@ -137,4 +138,20 @@ export const api = {
 
   compareSessions: (session1: string, session2: string) =>
     fetchAPI<ComparisonResponse>(`/compare?session1=${session1}&session2=${session2}`),
+
+  // Manual Linking
+  getUnmatchedSplitwise: (sessionId: string) =>
+    fetchAPI<UnmatchedResponse>(`/sessions/${sessionId}/unmatched-splitwise`),
+
+  linkTransactionsManually: (sessionId: string, splitwiseId: number, bankId: number) =>
+    fetchAPI<{ success: boolean; message: string }>(
+      `/sessions/${sessionId}/link-transactions?splitwise_id=${splitwiseId}&bank_id=${bankId}`,
+      { method: 'POST' }
+    ),
+
+  skipTransaction: (sessionId: string, splitwiseId: number, reason: string = 'no_match') =>
+    fetchAPI<{ success: boolean; message: string }>(
+      `/sessions/${sessionId}/skip-transaction?splitwise_id=${splitwiseId}&reason=${reason}`,
+      { method: 'POST' }
+    ),
 };

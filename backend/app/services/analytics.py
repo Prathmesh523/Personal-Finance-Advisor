@@ -94,14 +94,43 @@ def calculate_cash_outflow(session_id, user_id=1):
 
 def calculate_monthly_float(session_id, user_id=1):
     """
-    Calculate monthly float (difference between cash outflow and net consumption)
+    Calculate monthly float (money in friends' pockets)
+    
+    Positive = Friends owe you (you paid extra for them)
+    Negative = You owe friends (they paid extra for you)
+    
+    Formula: SUM(positive my_column_value) - ABS(SUM(negative my_column_value))
     """
-    net_consumption = calculate_net_consumption(session_id, user_id)
-    cash_outflow = calculate_cash_outflow(session_id, user_id)
+    conn = get_db_connection()
+    cur = conn.cursor()
     
-    float_amount = cash_outflow - net_consumption['total']
+    # What friends owe you (positive values in my_column_value)
+    cur.execute("""
+        SELECT COALESCE(SUM(my_column_value), 0)
+        FROM splitwise_transactions
+        WHERE upload_session_id = %s
+          AND user_id = %s
+          AND my_column_value > 0
+    """, (session_id, user_id))
     
-    return round(float_amount, 2)
+    friends_owe_me = float(cur.fetchone()[0])
+    
+    # What you owe friends (negative values in my_column_value)
+    cur.execute("""
+        SELECT COALESCE(ABS(SUM(my_column_value)), 0)
+        FROM splitwise_transactions
+        WHERE upload_session_id = %s
+          AND user_id = %s
+          AND my_column_value < 0
+    """, (session_id, user_id))
+    
+    i_owe_friends = float(cur.fetchone()[0])
+    
+    cur.close()
+    conn.close()
+    
+    # Positive = recoverable, Negative = you owe
+    return round(friends_owe_me - i_owe_friends, 2)
 
 def get_category_breakdown(session_id, user_id=1):
     """

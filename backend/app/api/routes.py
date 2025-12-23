@@ -7,8 +7,7 @@ from app.api.schemas import (
     TransactionListResponse, Transaction,
     WarningsResponse,
     UploadResponse, SessionStatus,
-    AvailableSessionsResponse, ComparisonResponse,
-    MetricComparison, CategoryComparison
+    AvailableSessionsResponse, ComparisonResponse
 
 )
 from app.api.upload_handler import save_uploaded_file, start_analysis_thread  # NEW
@@ -24,9 +23,6 @@ import math
 
 router = APIRouter()
 
-# ============================================================================
-# EXISTING ENDPOINTS
-# ============================================================================
 
 @router.get("/health")
 def health_check():
@@ -36,10 +32,6 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "service": "finance-advisor-api"
     }
-
-# ============================================================================
-# UPLOAD ENDPOINT
-# ============================================================================
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_files(
@@ -112,9 +104,6 @@ async def upload_files(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# NEW ENDPOINTS
-# ============================================================================
 
 @router.get("/sessions", response_model=SessionListResponse)
 def list_sessions():
@@ -155,6 +144,121 @@ def list_sessions():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/sessions/available", response_model=AvailableSessionsResponse)
+def get_available_sessions():
+    """
+    Get list of all completed sessions for comparison
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                id,
+                selected_month,
+                status,
+                bank_count + splitwise_count as total_txns,
+                created_at
+            FROM upload_sessions
+            WHERE status = 'completed'
+            ORDER BY selected_month DESC
+        """)
+        
+        sessions = []
+        for row in cur.fetchall():
+            sessions.append({
+                'session_id': row[0],
+                'month': row[1],
+                'status': row[2],
+                'transaction_count': row[3],
+                'created_at': row[4].isoformat()
+            })
+        
+        cur.close()
+        conn.close()
+        
+        return {'sessions': sessions, 'count': len(sessions)}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/{session_id}/status", response_model=SessionStatus)
+def get_session_status(session_id: str):
+    """
+    Check analysis status and progress
+    """
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get session info
+        cur.execute("""
+            SELECT 
+                id,
+                status,
+                selected_month,
+                bank_count,
+                splitwise_count,
+                created_at
+            FROM upload_sessions
+            WHERE id = %s
+        """, (session_id,))
+        
+        result = cur.fetchone()
+        if not result:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        session_id, status, month, bank_count, splitwise_count, created_at = result
+        
+        # Get processing progress from BOTH tables
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'LINKED' THEN 1 ELSE 0 END) as linked,
+                SUM(CASE WHEN status = 'TRANSFER' THEN 1 ELSE 0 END) as transfers
+            FROM bank_transactions
+            WHERE upload_session_id = %s
+        """, (session_id,))
+        
+        bank_result = cur.fetchone()
+        bank_total, bank_linked, bank_transfers = bank_result if bank_result else (0, 0, 0)
+        
+        # Get splitwise linked count
+        cur.execute("""
+            SELECT COUNT(*) 
+            FROM splitwise_transactions
+            WHERE upload_session_id = %s AND status = 'LINKED'
+        """, (session_id,))
+        
+        split_linked = cur.fetchone()[0] or 0
+        
+        cur.close()
+        conn.close()
+        
+        return SessionStatus(
+            session_id=session_id,
+            status=status,
+            selected_month=month,
+            progress={
+                "bank_processed": bank_count or 0,
+                "splitwise_processed": splitwise_count or 0,
+                "total_transactions": (bank_count or 0) + (splitwise_count or 0),
+                "linked_pairs": (bank_linked or 0),  # Count from bank side only
+                "settlements": bank_transfers or 0
+            },
+            created_at=created_at
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
 @router.get("/sessions/{session_id}/metrics", response_model=MetricsResponse)
 def get_session_metrics(session_id: str):
@@ -393,85 +497,8 @@ def get_session_warnings(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-# ============================================================================
-# STATUS ENDPOINT
-# ============================================================================
+  
 
-@router.get("/sessions/{session_id}/status", response_model=SessionStatus)
-def get_session_status(session_id: str):
-    """
-    Check analysis status and progress
-    """
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Get session info
-        cur.execute("""
-            SELECT 
-                id,
-                status,
-                selected_month,
-                bank_count,
-                splitwise_count,
-                created_at
-            FROM upload_sessions
-            WHERE id = %s
-        """, (session_id,))
-        
-        result = cur.fetchone()
-        if not result:
-            cur.close()
-            conn.close()
-            raise HTTPException(status_code=404, detail="Session not found")
-        
-        session_id, status, month, bank_count, splitwise_count, created_at = result
-        
-        # Get processing progress from BOTH tables
-        cur.execute("""
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'LINKED' THEN 1 ELSE 0 END) as linked,
-                SUM(CASE WHEN status = 'TRANSFER' THEN 1 ELSE 0 END) as transfers
-            FROM bank_transactions
-            WHERE upload_session_id = %s
-        """, (session_id,))
-        
-        bank_result = cur.fetchone()
-        bank_total, bank_linked, bank_transfers = bank_result if bank_result else (0, 0, 0)
-        
-        # Get splitwise linked count
-        cur.execute("""
-            SELECT COUNT(*) 
-            FROM splitwise_transactions
-            WHERE upload_session_id = %s AND status = 'LINKED'
-        """, (session_id,))
-        
-        split_linked = cur.fetchone()[0] or 0
-        
-        cur.close()
-        conn.close()
-        
-        return SessionStatus(
-            session_id=session_id,
-            status=status,
-            selected_month=month,
-            progress={
-                "bank_processed": bank_count or 0,
-                "splitwise_processed": splitwise_count or 0,
-                "total_transactions": (bank_count or 0) + (splitwise_count or 0),
-                "linked_pairs": (bank_linked or 0),  # Count from bank side only
-                "settlements": bank_transfers or 0
-            },
-            created_at=created_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-      
 @router.get("/sessions/{session_id}/daily-spending")
 def get_daily_spending(session_id: str):
     """
@@ -541,6 +568,7 @@ def get_daily_spending(session_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/sessions/{session_id}/transactions/grouped")
 def get_grouped_transactions(
@@ -707,45 +735,6 @@ def get_grouped_transactions(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/sessions/available", response_model=AvailableSessionsResponse)
-def get_available_sessions():
-    """
-    Get list of all completed sessions for comparison
-    """
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("""
-            SELECT 
-                id,
-                selected_month,
-                status,
-                bank_count + splitwise_count as total_txns,
-                created_at
-            FROM upload_sessions
-            WHERE status = 'completed'
-            ORDER BY selected_month DESC
-        """)
-        
-        sessions = []
-        for row in cur.fetchall():
-            sessions.append({
-                'session_id': row[0],
-                'month': row[1],
-                'status': row[2],
-                'transaction_count': row[3],
-                'created_at': row[4].isoformat()
-            })
-        
-        cur.close()
-        conn.close()
-        
-        return {'sessions': sessions, 'count': len(sessions)}
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/compare", response_model=ComparisonResponse)
 def compare_sessions(
@@ -883,5 +872,85 @@ def compare_sessions(
         
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/sessions/{session_id}/unmatched-splitwise")
+def get_unmatched_splitwise_transactions(session_id: str):
+    """
+    Get all unmatched splitwise PAYER transactions with suggested bank matches
+    """
+    try:
+        from app.services.manual_linking import get_unmatched_splitwise
+        
+        # Verify session exists
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM upload_sessions WHERE id = %s", (session_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        cur.close()
+        conn.close()
+        
+        unmatched = get_unmatched_splitwise(session_id)
+        
+        return {
+            'unmatched': unmatched,
+            'count': len(unmatched)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/link-transactions")
+def link_transactions_manually(
+    session_id: str,
+    splitwise_id: int = Query(..., description="Splitwise transaction ID"),
+    bank_id: int = Query(..., description="Bank transaction ID")
+):
+    """
+    Manually link a splitwise transaction to a bank transaction
+    """
+    try:
+        from app.services.manual_linking import link_transactions_manual
+        
+        link_transactions_manual(splitwise_id, bank_id, session_id)
+        
+        return {
+            'success': True,
+            'message': 'Transactions linked successfully'
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sessions/{session_id}/skip-transaction")
+def skip_splitwise_transaction(
+    session_id: str,
+    splitwise_id: int = Query(..., description="Splitwise transaction ID"),
+    reason: str = Query('no_match', description="Reason for skipping")
+):
+    """
+    Mark splitwise transaction as skipped (no bank match exists)
+    """
+    try:
+        from app.services.manual_linking import skip_transaction
+        
+        skip_transaction(splitwise_id, reason, session_id)
+        
+        return {
+            'success': True,
+            'message': 'Transaction marked as skipped'
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
