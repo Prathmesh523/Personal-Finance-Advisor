@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { storage } from '@/lib/storage';
 import { formatMonth } from '@/lib/utils';
@@ -17,6 +18,7 @@ import { Calendar } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { currentSession, currentSessionMonth, loading: sessionLoading } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -27,15 +29,10 @@ export default function DashboardPage() {
   const [dailySpending, setDailySpending] = useState<DailySpendingResponse | null>(null);
 
   useEffect(() => {
-    const sessionId = storage.getSessionId();
+    if (!currentSession) return;  // NEW: Wait for session
     
-    if (!sessionId) {
-      router.push('/upload');
-      return;
-    }
-
-    fetchDashboardData(sessionId);
-  }, [router]);
+    fetchDashboardData(currentSession);  // NEW: Use from context
+  }, [currentSession]);
 
   const fetchDashboardData = async (sessionId: string) => {
     try {
