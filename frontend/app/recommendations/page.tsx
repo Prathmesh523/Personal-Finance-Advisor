@@ -4,8 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
-import { storage } from '@/lib/storage';
 import { formatMonth } from '@/lib/utils';
 import { RecommendationsResponse } from '@/types';
 import { RecurringSubscriptionsCard } from '@/components/RecurringSubscriptionsCard';
@@ -17,34 +17,23 @@ import { Calendar } from 'lucide-react';
 
 export default function RecommendationsPage() {
   const router = useRouter();
+  const { currentSession, currentSessionMonth } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
   const [data, setData] = useState<RecommendationsResponse | null>(null);
 
   useEffect(() => {
-    const sessionId = storage.getSessionId();
-
-    if (!sessionId) {
-      router.push('/upload');
-      return;
-    }
-
-    fetchRecommendations(sessionId);
-  }, [router]);
+    if (!currentSession) return;
+    fetchRecommendations(currentSession);
+  }, [router, currentSession]);
 
   const fetchRecommendations = async (sessionId: string) => {
     try {
       setLoading(true);
       setError(null);
 
-      const [recommendations, statusData] = await Promise.all([
-        api.getRecommendations(sessionId),
-        api.getSessionStatus(sessionId),
-      ]);
-
+      const recommendations = await api.getRecommendations(sessionId);
       setData(recommendations);
-      setSessionMonth(statusData.selected_month);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load recommendations');
       console.error('Recommendations error:', err);
@@ -98,13 +87,13 @@ export default function RecommendationsPage() {
                 Personalized insights based on your spending
               </p>
             </div>
-            {sessionMonth && (
+            {currentSessionMonth && (
               <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
                 <Calendar className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-gray-600">Analysis Period</p>
                   <p className="text-sm font-semibold text-gray-900">
-                    {formatMonth(sessionMonth)}
+                    {formatMonth(currentSessionMonth)}
                   </p>
                 </div>
               </div>

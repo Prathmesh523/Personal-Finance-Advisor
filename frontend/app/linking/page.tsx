@@ -3,9 +3,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from '@/lib/session-context';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { storage } from '@/lib/storage';
 import { UnmatchedSplitwise } from '@/types';
 import { UnmatchedTransactionCard } from '@/components/UnmatchedTransactionCard';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,38 +15,28 @@ import { formatMonth } from '@/lib/utils';
 
 export default function LinkingPage() {
   const router = useRouter();
+  const { currentSession, currentSessionMonth } = useSession();
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
   const [unmatched, setUnmatched] = useState<UnmatchedSplitwise[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [viewMode, setViewMode] = useState<'one-at-a-time' | 'all'>('one-at-a-time');
 
   useEffect(() => {
-    const sessionId = storage.getSessionId();
+    if (!currentSession) return;
+    fetchUnmatched(currentSession);
+  }, [router, currentSession]);
 
-    if (!sessionId) {
-      router.push('/upload');
-      return;
-    }
-
-    fetchUnmatched(sessionId);
-  }, [router]);
 
   const fetchUnmatched = async (sessionId: string) => {
     try {
       setLoading(true);
       setError(null);
 
-      const [unmatchedData, statusData] = await Promise.all([
-        api.getUnmatchedSplitwise(sessionId),
-        api.getSessionStatus(sessionId),
-      ]);
-
+      const unmatchedData = await api.getUnmatchedSplitwise(sessionId);
       setUnmatched(unmatchedData.unmatched);
-      setSessionMonth(statusData.selected_month);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load unmatched transactions');
       console.error('Linking page error:', err);
@@ -56,8 +46,8 @@ export default function LinkingPage() {
   };
 
   const handleLink = async (splitwiseId: number, bankId: number) => {
-    const sessionId = storage.getSessionId();
-    if (!sessionId) return;
+    if (!currentSession) return;
+    const sessionId = currentSession;
 
     try {
       setProcessing(true);
@@ -82,8 +72,8 @@ export default function LinkingPage() {
   };
 
   const handleSkip = async (splitwiseId: number, reason: string) => {
-    const sessionId = storage.getSessionId();
-    if (!sessionId) return;
+    if (!currentSession) return;
+    const sessionId = currentSession;
 
     try {
       setProcessing(true);
@@ -166,12 +156,12 @@ export default function LinkingPage() {
               <h1 className="text-3xl font-bold text-gray-900">Link Transactions</h1>
               <p className="text-gray-600 mt-2">Match Splitwise expenses to bank transactions</p>
             </div>
-            {sessionMonth && (
+            {currentSessionMonth && (
               <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
                 <Calendar className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-gray-600">Analysis Period</p>
-                  <p className="text-sm font-semibold text-gray-900">{formatMonth(sessionMonth)}</p>
+                  <p className="text-sm font-semibold text-gray-900">{formatMonth(currentSessionMonth)}</p>
                 </div>
               </div>
             )}

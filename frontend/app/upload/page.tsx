@@ -93,7 +93,7 @@ export default function UploadPage() {
         if (statusData.status === 'completed') {
           setStatus('completed');
           setTimeout(() => {
-            router.push('/dashboard');
+            router.push(`/dashboard?session=${sessionId}`);
           }, 1500);
           return;
         }

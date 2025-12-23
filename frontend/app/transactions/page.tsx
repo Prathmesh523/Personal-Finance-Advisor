@@ -3,9 +3,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSession } from '@/lib/session-context';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { storage } from '@/lib/storage';
 import { formatMonth } from '@/lib/utils';
 import { TransactionGroup } from '@/types';
 import { GroupedTransactionList } from '@/components/GroupedTransactionList';
@@ -22,10 +22,10 @@ import { Calendar } from 'lucide-react';
 
 export default function TransactionsPage() {
   const router = useRouter();
+  const { currentSession, currentSessionMonth } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
   const [groups, setGroups] = useState<TransactionGroup[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -39,24 +39,10 @@ export default function TransactionsPage() {
   const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
-    const sessionId = storage.getSessionId();
+    if (!currentSession) return;
+    fetchTransactions(currentSession, currentPage);
+  }, [currentSession, currentPage, sourceFilter, categoryFilter]);
 
-    if (!sessionId) {
-      router.push('/upload');
-      return;
-    }
-
-    fetchTransactions(sessionId, currentPage);
-    
-    // Fetch session info for month display  // NEW
-    if (!sessionMonth) {
-      api.getSessionStatus(sessionId).then((data) => {
-        setSessionMonth(data.selected_month);
-      }).catch((err) => {
-        console.error('Failed to get session info:', err);
-      });
-    }
-  }, [router, currentPage, sourceFilter, categoryFilter]);
 
   useEffect(() => {
     // Check if category filter is in URL query params
@@ -101,9 +87,8 @@ export default function TransactionsPage() {
   };
 
   const handleRefresh = () => {
-    const sessionId = storage.getSessionId();
-    if (sessionId) {
-      fetchTransactions(sessionId, currentPage);
+    if (currentSession) {
+      fetchTransactions(currentSession, currentPage);
     }
   };
 
@@ -168,13 +153,13 @@ export default function TransactionsPage() {
                 {totalCount} group{totalCount !== 1 ? 's' : ''} • {totalTransactions} transaction{totalTransactions !== 1 ? 's' : ''}
               </p>
             </div>
-            {sessionMonth && (
+            {currentSessionMonth && (
               <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
                 <Calendar className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-gray-600">Analysis Period</p>
                   <p className="text-sm font-semibold text-gray-900">
-                    {formatMonth(sessionMonth)}
+                    {formatMonth(currentSessionMonth)}
                   </p>
                 </div>
               </div>

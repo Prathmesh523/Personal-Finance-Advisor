@@ -4,17 +4,19 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { storage } from '@/lib/storage';
+import { useSearchParams } from 'next/navigation';
+
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
 
   useEffect(() => {
     // Redirect based on session existence
-    const sessionId = storage.getSessionId();
-    
-    if (sessionId) {
-      router.push('/dashboard');
+    const sessionFromUrl = searchParams.get('session');
+    if (sessionFromUrl) {
+      router.push(`/dashboard?session=${sessionFromUrl}`);
     } else {
       router.push('/upload');
     }

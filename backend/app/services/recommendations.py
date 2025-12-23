@@ -46,15 +46,22 @@ def get_category_comparison(session_id, user_id=1):
     conn.close()
     
     if not prev_result:
-        return None, None  # No previous month to compare
+        print(f"🔍 DEBUG: No previous session found before {current_month}")  # DEBUG
+        return None, None
     
     prev_session_id = prev_result[0]
+    prev_month = prev_result[1]
+    
+    print(f"🔍 DEBUG: Comparing {current_month} vs {prev_month}")  # DEBUG
     
     # Get category breakdowns
     current_categories = get_category_breakdown(session_id, user_id)
     prev_categories = get_category_breakdown(prev_session_id, user_id)
     
-    # Convert to dict for easier lookup
+    print(f"🔍 DEBUG: Current categories: {len(current_categories)}")  # DEBUG
+    print(f"🔍 DEBUG: Previous categories: {len(prev_categories)}")  # DEBUG
+    
+    # Convert to dict
     current_dict = {cat['category']: cat['amount'] for cat in current_categories}
     prev_dict = {cat['category']: cat['amount'] for cat in prev_categories}
     
@@ -64,17 +71,22 @@ def get_category_comparison(session_id, user_id=1):
     # Compare each category
     all_categories = set(current_dict.keys()) | set(prev_dict.keys())
     
+    print(f"🔍 DEBUG: Total unique categories: {len(all_categories)}")  # DEBUG
+    
     for category in all_categories:
         current_amt = current_dict.get(category, 0)
         prev_amt = prev_dict.get(category, 0)
         
         if prev_amt == 0:
-            continue  # Skip new categories
+            print(f"🔍 DEBUG: Skipping {category} (new category, no previous data)")  # DEBUG
+            continue
         
         change_amt = current_amt - prev_amt
         change_pct = (change_amt / prev_amt) * 100
         
-        if change_pct >= 10:  # Increase threshold
+        print(f"🔍 DEBUG: {category}: ₹{prev_amt:.0f} -> ₹{current_amt:.0f} ({change_pct:+.1f}%)")  # DEBUG
+        
+        if change_pct > 0:  # ✅ CHANGED: Was >= 10, now > 0
             reason = detect_increase_reason(session_id, category, user_id)
             recommendation = generate_recommendation(category, change_pct)
             
@@ -88,7 +100,7 @@ def get_category_comparison(session_id, user_id=1):
                 'recommendation': recommendation
             })
         
-        elif change_pct <= -10:  # Decrease threshold
+        elif change_pct < 0:  # ✅ CHANGED: Was <= -10, now < 0
             decreases.append({
                 'category': category,
                 'current': round(current_amt, 2),
@@ -101,6 +113,8 @@ def get_category_comparison(session_id, user_id=1):
     # Sort by percentage change
     increases.sort(key=lambda x: x['change_percentage'], reverse=True)
     decreases.sort(key=lambda x: x['change_percentage'], reverse=True)
+    
+    print(f"🔍 DEBUG: Found {len(increases)} increases, {len(decreases)} decreases")  # DEBUG
     
     return increases[:3], decreases[:3]
 

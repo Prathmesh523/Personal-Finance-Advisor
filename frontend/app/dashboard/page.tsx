@@ -6,7 +6,6 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
-import { storage } from '@/lib/storage';
 import { formatMonth } from '@/lib/utils';
 import { Metrics, CategoryBreakdown, Warnings, DailySpendingResponse } from '@/types';
 import { MetricCard } from '@/components/MetricCard';
@@ -21,8 +20,7 @@ export default function DashboardPage() {
   const { currentSession, currentSessionMonth, loading: sessionLoading } = useSession();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  const [sessionMonth, setSessionMonth] = useState<string | null>(null);
+
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [categories, setCategories] = useState<CategoryBreakdown | null>(null);
   const [warnings, setWarnings] = useState<Warnings | null>(null);
@@ -39,19 +37,17 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      const [metricsData, categoriesData, warningsData, dailyData, statusData] = await Promise.all([
+      const [metricsData, categoriesData, warningsData, dailyData] = await Promise.all([
         api.getMetrics(sessionId),
         api.getCategoryBreakdown(sessionId),
         api.getWarnings(sessionId),
         api.getDailySpending(sessionId),
-        api.getSessionStatus(sessionId),
       ]);
 
       setMetrics(metricsData);
       setCategories(categoriesData);
       setWarnings(warningsData);
       setDailySpending(dailyData);
-      setSessionMonth(statusData.selected_month);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard data');
       console.error('Dashboard error:', err);
@@ -119,13 +115,13 @@ export default function DashboardPage() {
               <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
               <p className="text-gray-600 mt-2">Your financial overview</p>
             </div>
-            {sessionMonth && (
+            {currentSessionMonth && (
               <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg">
                 <Calendar className="w-5 h-5 text-blue-600" />
                 <div>
                   <p className="text-xs text-gray-600">Analysis Period</p>
                   <p className="text-sm font-semibold text-gray-900">
-                    {formatMonth(sessionMonth)}
+                    {formatMonth(currentSessionMonth)}
                   </p>
                 </div>
               </div>

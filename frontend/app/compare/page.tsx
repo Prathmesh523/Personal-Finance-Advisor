@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { formatMonth } from '@/lib/utils';
 import { AvailableSession, ComparisonResponse } from '@/types';
@@ -22,33 +23,15 @@ import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 
 export default function ComparePage() {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const [comparing, setComparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { sessions, loading } = useSession();
+  const availableSessions = sessions.filter(s => s.status === 'completed');
 
-  const [availableSessions, setAvailableSessions] = useState<AvailableSession[]>([]);
   const [session1, setSession1] = useState<string>('');
   const [session2, setSession2] = useState<string>('');
   const [comparisonData, setComparisonData] = useState<ComparisonResponse | null>(null);
 
-  useEffect(() => {
-    fetchAvailableSessions();
-  }, []);
-
-  const fetchAvailableSessions = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const data = await api.getAvailableSessions();
-      setAvailableSessions(data.sessions);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load sessions');
-      console.error('Sessions error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCompare = async () => {
     if (!session1 || !session2) {
@@ -146,7 +129,7 @@ export default function ComparePage() {
                   </SelectTrigger>
                   <SelectContent>
                     {availableSessions.map((session) => (
-                      <SelectItem key={session.session_id} value={session.session_id}>
+                      <SelectItem key={session.id} value={session.id}>
                         {formatMonth(session.month)} ({session.transaction_count} txns)
                       </SelectItem>
                     ))}
@@ -163,7 +146,7 @@ export default function ComparePage() {
                   </SelectTrigger>
                   <SelectContent>
                     {availableSessions.map((session) => (
-                      <SelectItem key={session.session_id} value={session.session_id}>
+                      <SelectItem key={session.id} value={session.id}>
                         {formatMonth(session.month)} ({session.transaction_count} txns)
                       </SelectItem>
                     ))}
