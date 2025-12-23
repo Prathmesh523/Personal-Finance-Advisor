@@ -230,3 +230,47 @@ export interface UpdateCategoryResponse {
   pattern: string | null;
   rule_saved: boolean;
 }
+
+export interface RecurringSubscription {
+  merchant: string;
+  frequency: string;
+  interval_days: number;
+  average_amount: number;
+  transaction_count: number;
+  total_spent: number;
+  first_date: string;
+  last_date: string;
+  category: string;
+}
+
+export interface RecurringSummary {
+  count: number;
+  monthly_total: number;
+  annual_total: number;
+  subscriptions: RecurringSubscription[];
+}
+
+export interface CategoryIncrease {
+  category: string;
+  current: number;
+  previous: number;
+  change_amount: number;
+  change_percentage: number;
+  reason: string;
+  recommendation: string;
+}
+
+export interface CategoryDecrease {
+  category: string;
+  current: number;
+  previous: number;
+  change_amount: number;
+  change_percentage: number;
+  saved: number;
+}
+
+export interface RecommendationsResponse {
+  recurring: RecurringSummary;
+  high_spending: CategoryIncrease[];
+  savings: CategoryDecrease[];
+}

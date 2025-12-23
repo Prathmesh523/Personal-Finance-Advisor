@@ -58,6 +58,16 @@ export default function TransactionsPage() {
     }
   }, [router, currentPage, sourceFilter, categoryFilter]);
 
+  useEffect(() => {
+    // Check if category filter is in URL query params
+    const searchParams = new URLSearchParams(window.location.search);
+    const categoryParam = searchParams.get('category');
+    
+    if (categoryParam) {
+      setCategoryFilter(categoryParam);
+    }
+  }, []);
+
   const fetchTransactions = async (sessionId: string, page: number) => {
     try {
       setLoading(true);

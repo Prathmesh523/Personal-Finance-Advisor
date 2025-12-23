@@ -15,7 +15,8 @@ import {
   UnmatchedResponse,
   SimilarCountResponse,
   UpdateCategoryResponse,
-  CategoryRule
+  CategoryRule,
+  RecommendationsResponse
 } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
@@ -182,4 +183,8 @@ export const api = {
 
   getCategorizationRules: () =>  // ✅ NO SPACE
   fetchAPI<{ rules: CategoryRule[]; count: number }>('/categorization-rules'),
+
+  // Recommendations
+  getRecommendations: (sessionId: string) =>
+    fetchAPI<RecommendationsResponse>(`/sessions/${sessionId}/recommendations`),
 };
