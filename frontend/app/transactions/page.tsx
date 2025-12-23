@@ -39,20 +39,21 @@ export default function TransactionsPage() {
   const [categories, setCategories] = useState<string[]>([]);
 
   useEffect(() => {
+    // Wait for session
     if (!currentSession) return;
-    fetchTransactions(currentSession, currentPage);
-  }, [currentSession, currentPage, sourceFilter, categoryFilter]);
 
-
-  useEffect(() => {
-    // Check if category filter is in URL query params
+    // Read URL params and set filters FIRST
     const searchParams = new URLSearchParams(window.location.search);
     const categoryParam = searchParams.get('category');
     
-    if (categoryParam) {
+    if (categoryParam && categoryParam !== categoryFilter) {
       setCategoryFilter(categoryParam);
+      return; // Exit - let the state update trigger re-fetch
     }
-  }, []);
+
+    // Now fetch with current filters
+    fetchTransactions(currentSession, currentPage);
+  }, [currentSession, currentPage, sourceFilter, categoryFilter]);
 
   const fetchTransactions = async (sessionId: string, page: number) => {
     try {

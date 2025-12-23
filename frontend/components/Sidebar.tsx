@@ -3,6 +3,7 @@
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
+import { useSession } from '@/lib/session-context';
 import { storage } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { LayoutDashboard, Receipt, GitCompare, Upload, Link, Lightbulb} from 'lucide-react';
@@ -10,6 +11,7 @@ import { useEffect, useState } from 'react'; // ✅ ADD THIS
 
 export function Sidebar() {
   const router = useRouter();
+  const { currentSession } = useSession();
   const pathname = usePathname();
   
   // ✅ FIX: Use state to avoid hydration mismatch
@@ -58,7 +60,12 @@ export function Sidebar() {
             return (
               <button
                 key={item.path}
-                onClick={() => router.push(item.path)}
+                onClick={() => {
+                  const url = currentSession 
+                    ? `${item.path}?session=${currentSession}`
+                    : item.path;
+                  router.push(url);
+                }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive(item.path)
                     ? 'bg-blue-600 text-white'

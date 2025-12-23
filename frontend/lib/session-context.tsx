@@ -39,41 +39,52 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     fetchSessions();
   }, []);
 
-  // Update session from URL
-  useEffect(() => {
-    const sessionFromUrl = searchParams.get('session');
-    if (sessionFromUrl && sessionFromUrl !== currentSession) {
-      setCurrentSessionState(sessionFromUrl);
-      const session = sessions.find(s => s.id === sessionFromUrl);
-      if (session) {
-        setCurrentSessionMonth(session.month);
-      }
-    }
-  }, [searchParams, sessions]);
-
   const fetchSessions = async () => {
     try {
       setLoading(true);
       const data = await api.listSessions();
       
-      // Filter completed sessions only
       const completed = data.sessions.filter(s => s.status === 'completed');
       setSessions(completed);
 
-      // Set first session as default if none selected
       if (completed.length > 0) {
-        const sessionFromUrl = searchParams.get('session');
-        const defaultSession = sessionFromUrl || completed[0].id;
-        setCurrentSessionState(defaultSession);
+        // ✅ Check 3 sources (in priority order)
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionFromUrl = urlParams.get('session');
+        const sessionFromStorage = localStorage.getItem('last_session_id');
         
-        const session = completed.find(s => s.id === defaultSession);
+        let sessionToUse;
+        
+        // Priority 1: URL has valid session
+        if (sessionFromUrl && completed.find(s => s.id === sessionFromUrl)) {
+          sessionToUse = sessionFromUrl;
+        } 
+        // Priority 2: localStorage has valid session
+        else if (sessionFromStorage && completed.find(s => s.id === sessionFromStorage)) {
+          sessionToUse = sessionFromStorage;
+        } 
+        // Priority 3: First session
+        else {
+          sessionToUse = completed[0].id;
+        }
+        
+        // ✅ Save to localStorage
+        localStorage.setItem('last_session_id', sessionToUse);
+        
+        // Set state
+        setCurrentSessionState(sessionToUse);
+        const session = completed.find(s => s.id === sessionToUse);
         if (session) {
           setCurrentSessionMonth(session.month);
         }
-
-        // Update URL if no session in URL
-        if (!sessionFromUrl) {
-          router.replace(`${pathname}?session=${defaultSession}`);
+        
+        // Sync URL
+        const currentParams = new URLSearchParams(window.location.search);
+        const urlSession = currentParams.get('session');
+        
+        if (urlSession !== sessionToUse) {
+          currentParams.set('session', sessionToUse);
+          router.replace(`${pathname}?${currentParams.toString()}`);
         }
       }
     } catch (err) {
@@ -86,13 +97,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setCurrentSession = (sessionId: string) => {
     setCurrentSessionState(sessionId);
     
+    // ✅ Save to localStorage
+    localStorage.setItem('last_session_id', sessionId);
+    
     const session = sessions.find(s => s.id === sessionId);
     if (session) {
       setCurrentSessionMonth(session.month);
     }
 
-    // Update URL
-    router.push(`${pathname}?session=${sessionId}`);
+    // Preserve other query params
+    const currentParams = new URLSearchParams(window.location.search);
+    currentParams.set('session', sessionId);
+    
+    router.push(`${pathname}?${currentParams.toString()}`);
   };
 
   return (
