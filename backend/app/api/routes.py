@@ -1151,4 +1151,33 @@ def get_categorization_rules(user_id: int = Query(1, description="User ID")):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sessions/{session_id}/recommendations")
+def get_recommendations(session_id: str, user_id: int = Query(1)):
+    """
+    Get personalized recommendations for a session
+    """
+    try:
+        from app.services.recommendations import get_all_recommendations
+        
+        # Verify session exists
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM upload_sessions WHERE id = %s", (session_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        cur.close()
+        conn.close()
+        
+        recommendations = get_all_recommendations(session_id, user_id)
+        
+        return recommendations
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     
