@@ -954,3 +954,201 @@ def skip_splitwise_transaction(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/categories")
+def get_available_categories():
+    """
+    Get list of available categories
+    """
+    categories = [
+        'Food & Dining',
+        'Groceries',
+        'Transport',
+        'Shopping',
+        'Entertainment',
+        'Bills & Utilities',
+        'Health',
+        'Investment',
+        'Education',
+        'Family Transfer',
+        'Rent',
+        'Settlement',
+        'Other'
+    ]
+    
+    return {'categories': categories}
+
+
+@router.get("/sessions/{session_id}/transactions/{transaction_id}/similar-count")
+def get_similar_transaction_count(
+    session_id: str,
+    transaction_id: int,
+    source: str = Query(..., description="BANK or SPLITWISE")
+):
+    """
+    Count similar transactions for preview
+    """
+    try:
+        from app.services.categorization_rules import extract_merchant_pattern, count_similar_transactions
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get transaction description
+        if source == 'BANK':
+            cur.execute("""
+                SELECT description FROM bank_transactions
+                WHERE id = %s AND upload_session_id = %s
+            """, (transaction_id, session_id))
+        else:
+            cur.execute("""
+                SELECT description FROM splitwise_transactions
+                WHERE id = %s AND upload_session_id = %s
+            """, (transaction_id, session_id))
+        
+        result = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        description = result[0]
+        pattern = extract_merchant_pattern(description)
+        
+        if not pattern:
+            return {
+                'pattern': None,
+                'count': 0,
+                'message': 'No pattern detected'
+            }
+        
+        count = count_similar_transactions(session_id, source, pattern, transaction_id)
+        
+        return {
+            'pattern': pattern,
+            'count': count,
+            'message': f'Found {count} similar transaction(s)'
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.patch("/sessions/{session_id}/transactions/{transaction_id}/category")
+def update_transaction_category(
+    session_id: str,
+    transaction_id: int,
+    source: str = Query(..., description="BANK or SPLITWISE"),
+    new_category: str = Query(..., description="New category name"),
+    create_rule: bool = Query(False, description="Save as rule for future"),
+    apply_to_similar: bool = Query(False, description="Apply to similar transactions")
+):
+    """
+    Update transaction category with optional rule creation
+    """
+    try:
+        from app.services.categorization_rules import (
+            extract_merchant_pattern,
+            save_categorization_rule,
+            apply_rule_to_similar
+        )
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get transaction description
+        if source == 'BANK':
+            cur.execute("""
+                SELECT description FROM bank_transactions
+                WHERE id = %s AND upload_session_id = %s
+            """, (transaction_id, session_id))
+        else:
+            cur.execute("""
+                SELECT description FROM splitwise_transactions
+                WHERE id = %s AND upload_session_id = %s
+            """, (transaction_id, session_id))
+        
+        result = cur.fetchone()
+        if not result:
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        
+        description = result[0]
+        
+        # Update current transaction
+        if source == 'BANK':
+            cur.execute("""
+                UPDATE bank_transactions
+                SET category = %s
+                WHERE id = %s
+            """, (new_category, transaction_id))
+        else:
+            cur.execute("""
+                UPDATE splitwise_transactions
+                SET category = %s
+                WHERE id = %s
+            """, (new_category, transaction_id))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        updated_count = 1
+        pattern = None
+        
+        # Apply to similar transactions if requested
+        if apply_to_similar:
+            pattern = extract_merchant_pattern(description)
+            if pattern:
+                similar_count = apply_rule_to_similar(
+                    session_id, source, pattern, new_category, transaction_id
+                )
+                updated_count += similar_count
+        
+        # Save rule for future if requested
+        if create_rule and pattern:
+            save_categorization_rule(
+                user_id=1,
+                pattern=pattern,
+                category=new_category,
+                match_type='contains',
+                source=source
+            )
+        
+        return {
+            'success': True,
+            'message': f'Updated {updated_count} transaction(s)',
+            'updated_count': updated_count,
+            'pattern': pattern,
+            'rule_saved': create_rule and pattern is not None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/categorization-rules")
+def get_categorization_rules(user_id: int = Query(1, description="User ID")):
+    """
+    Get all saved categorization rules
+    """
+    try:
+        from app.services.categorization_rules import get_user_rules
+        
+        rules = get_user_rules(user_id)
+        
+        return {
+            'rules': rules,
+            'count': len(rules)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    

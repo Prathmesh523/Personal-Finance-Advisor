@@ -20,6 +20,7 @@ def reset_schema():
     tables_to_drop = [
         "bank_transactions", 
         "splitwise_transactions",
+        "user_categorization_rules",
         "upload_sessions"
     ]
     
@@ -52,6 +53,20 @@ def reset_schema():
         )
     """)
     print("   ✅ Created upload_sessions")
+
+    # Create user_categorization_rules table
+    cur.execute("""
+        CREATE TABLE user_categorization_rules (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            pattern VARCHAR(200) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            match_type VARCHAR(50) NOT NULL DEFAULT 'contains',
+            source VARCHAR(20) NOT NULL DEFAULT 'BOTH',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    print("   ✅ Created user_categorization_rules")
     
     # Create splitwise_transactions table (first, because bank references it)
     cur.execute("""
@@ -147,6 +162,11 @@ def reset_schema():
     cur.execute("CREATE INDEX idx_session_user_month ON upload_sessions(user_id, selected_month)")
     cur.execute("CREATE INDEX idx_session_status ON upload_sessions(status)")
     print("   ✅ Created upload_sessions indexes")
+
+    # User categorization rules indexes
+    cur.execute("CREATE INDEX idx_rules_user_source ON user_categorization_rules(user_id, source)")
+    cur.execute("CREATE INDEX idx_rules_pattern ON user_categorization_rules(pattern)")
+    print("   ✅ Created user_categorization_rules indexes")
     
     print("\n" + "="*60)
     print("✅ SCHEMA RESET COMPLETE!")

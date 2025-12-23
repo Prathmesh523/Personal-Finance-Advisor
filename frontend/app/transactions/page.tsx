@@ -90,6 +90,13 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleRefresh = () => {
+    const sessionId = storage.getSessionId();
+    if (sessionId) {
+      fetchTransactions(sessionId, currentPage);
+    }
+  };
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -239,6 +246,7 @@ export default function TransactionsPage() {
           currentPage={currentPage}
           totalPages={totalPages}
           onPageChange={handlePageChange}
+          onRefresh={handleRefresh}
         />
       </div>
     </div>

@@ -207,3 +207,26 @@ export interface UnmatchedResponse {
   unmatched: UnmatchedSplitwise[];
   count: number;
 }
+
+export interface CategoryRule {
+  id: number;
+  pattern: string;
+  category: string;
+  match_type: string;
+  source: string;
+  created_at: string;
+}
+
+export interface SimilarCountResponse {
+  pattern: string | null;
+  count: number;
+  message: string;
+}
+
+export interface UpdateCategoryResponse {
+  success: boolean;
+  message: string;
+  updated_count: number;
+  pattern: string | null;
+  rule_saved: boolean;
+}

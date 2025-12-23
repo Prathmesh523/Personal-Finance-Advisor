@@ -3,6 +3,75 @@ from difflib import SequenceMatcher
 import re
 from psycopg2.extras import execute_values
 
+def apply_user_categorization_rules(session_id, user_id=1):
+    """
+    Apply user-defined categorization rules BEFORE keyword matching
+    This gives user rules highest priority
+    """
+    from app.services.categorization_rules import apply_user_rules_to_transaction
+    
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    print("\n🎯 Applying User Categorization Rules...")
+    
+    # Apply to bank transactions
+    cur.execute("""
+        SELECT id, description
+        FROM bank_transactions
+        WHERE upload_session_id = %s
+          AND user_id = %s
+          AND (category IS NULL OR category = 'Uncategorized')
+          AND status != 'TRANSFER'
+    """, (session_id, user_id))
+    
+    bank_txns = cur.fetchall()
+    bank_categorized = 0
+    
+    for txn_id, description in bank_txns:
+        matched_category = apply_user_rules_to_transaction(description, 'BANK', user_id)
+        if matched_category:
+            cur.execute("""
+                UPDATE bank_transactions
+                SET category = %s
+                WHERE id = %s
+            """, (matched_category, txn_id))
+            bank_categorized += 1
+    
+    conn.commit()
+    
+    # Apply to splitwise transactions
+    cur.execute("""
+        SELECT id, description
+        FROM splitwise_transactions
+        WHERE upload_session_id = %s
+          AND user_id = %s
+          AND (category IS NULL OR category = 'Uncategorized')
+    """, (session_id, user_id))
+    
+    split_txns = cur.fetchall()
+    split_categorized = 0
+    
+    for txn_id, description in split_txns:
+        matched_category = apply_user_rules_to_transaction(description, 'SPLITWISE', user_id)
+        if matched_category:
+            cur.execute("""
+                UPDATE splitwise_transactions
+                SET category = %s
+                WHERE id = %s
+            """, (matched_category, txn_id))
+            split_categorized += 1
+    
+    conn.commit()
+    
+    if bank_categorized > 0 or split_categorized > 0:
+        print(f"   ✅ User rules: {bank_categorized} bank, {split_categorized} splitwise")
+    
+    cur.close()
+    conn.close()
+    
+    return bank_categorized + split_categorized
+
 def detect_settlements(user_id=1, session_id=None):
     """Detect and mark settlement transactions"""
     conn = get_db_connection()
@@ -107,7 +176,10 @@ def auto_categorize_bank_transactions(session_id, user_id=1):
     Auto-categorize bank transactions with user config support
     """
     
-    # Get user config from session
+    # PRIORITY 1: Apply user rules first
+    apply_user_categorization_rules(session_id, user_id)
+    
+    # PRIORITY 2: Get user config from session
     conn = get_db_connection()
     cur = conn.cursor()
     

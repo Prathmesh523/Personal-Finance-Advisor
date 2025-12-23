@@ -44,7 +44,7 @@ export default function DashboardPage() {
 
       const [metricsData, categoriesData, warningsData, dailyData, statusData] = await Promise.all([
         api.getMetrics(sessionId),
-        api.getCategories(sessionId),
+        api.getCategoryBreakdown(sessionId),
         api.getWarnings(sessionId),
         api.getDailySpending(sessionId),
         api.getSessionStatus(sessionId),

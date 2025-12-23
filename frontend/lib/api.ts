@@ -12,7 +12,10 @@ import {
   GroupedTransactionsResponse,
   AvailableSessionsResponse,
   ComparisonResponse,
-  UnmatchedResponse
+  UnmatchedResponse,
+  SimilarCountResponse,
+  UpdateCategoryResponse,
+  CategoryRule
 } from '@/types';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
@@ -46,10 +49,9 @@ export const api = {
   getSessionStatus: (sessionId: string) =>
     fetchAPI<SessionStatus>(`/sessions/${sessionId}/status`),
 
-  // Metrics
   getMetrics: (sessionId: string) => fetchAPI<Metrics>(`/sessions/${sessionId}/metrics`),
 
-  getCategories: (sessionId: string) =>
+  getCategoryBreakdown: (sessionId: string) => 
     fetchAPI<CategoryBreakdown>(`/sessions/${sessionId}/categories`),
 
   getWarnings: (sessionId: string) => fetchAPI<Warnings>(`/sessions/${sessionId}/warnings`),
@@ -154,4 +156,30 @@ export const api = {
       `/sessions/${sessionId}/skip-transaction?splitwise_id=${splitwiseId}&reason=${reason}`,
       { method: 'POST' }
     ),
+
+  // Categorization
+  getCategories: () => fetchAPI<{ categories: string[] }>('/categories'),
+
+  getSimilarCount: (sessionId: string, transactionId: number, source: string) =>
+    fetchAPI<SimilarCountResponse>(
+      `/sessions/${sessionId}/transactions/${transactionId}/similar-count?source=${source}`
+    ),
+
+  updateTransactionCategory: (
+    sessionId: string,
+    transactionId: number,
+    source: string,
+    newCategory: string,
+    applyToSimilar: boolean,
+    createRule: boolean
+  ) =>
+    fetchAPI<UpdateCategoryResponse>(
+      `/sessions/${sessionId}/transactions/${transactionId}/category?source=${source}&new_category=${encodeURIComponent(
+        newCategory
+      )}&apply_to_similar=${applyToSimilar}&create_rule=${createRule}`,
+      { method: 'PATCH' }
+    ),
+
+  getCategorizationRules: () =>  // ✅ NO SPACE
+  fetchAPI<{ rules: CategoryRule[]; count: number }>('/categorization-rules'),
 };
