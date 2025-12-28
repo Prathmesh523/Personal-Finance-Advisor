@@ -97,12 +97,13 @@ def format_history_response(data, filters):
     
     if count <= 5:
         # Show transactions inline if few
-        answer += "**Transactions:**\n"
+        answer += "\n**Transactions:**\n\n"
         for row in data:
-            answer += f"• {row['date']} - {row['description']} - {format_currency(row['amount'])}\n"
+            answer += f"- **{format_currency(row['amount'])}** - {row['description']}\n"
+            answer += f"  _{row['date']}_\n\n"
         show_table = False
     else:
-        answer += f"Showing top {min(count, 50)} results. Click 'View Details' below to see the full list."
+        answer += "Click the button below to view all transactions in a table."
         show_table = True
     
     return {
@@ -138,11 +139,11 @@ def format_analysis_response(data, filters):
     
     # Build answer
     answer = f"You spent **{format_currency(total)}** {description}.\n\n"
-    answer += f"📊 **Stats:**\n"
-    answer += f"• Transactions: {count}\n"
-    answer += f"• Average: {format_currency(avg)}\n"
-    answer += f"• Smallest: {format_currency(min_amt)}\n"
-    answer += f"• Largest: {format_currency(max_amt)}\n"
+    answer += f"**Stats:**\n\n"
+    answer += f"- **Transactions:** {count}\n"
+    answer += f"- **Average:** {format_currency(avg)}\n"
+    answer += f"- **Smallest:** {format_currency(min_amt)}\n"
+    answer += f"- **Largest:** {format_currency(max_amt)}\n"
     
     return {
         'answer': answer,
@@ -164,7 +165,9 @@ def format_recommendation_response(data, filters):
         count = row['transaction_count']
         percentage = (amount / total_spent * 100) if total_spent > 0 else 0
         
-        answer += f"**{category}** - {format_currency(amount)} ({percentage:.0f}%) - {count} transactions\n"
+        answer += f"\n**{category}**\n"
+        answer += f"- Amount: {format_currency(amount)} ({percentage:.0f}%)\n"
+        answer += f"- Transactions: {count}\n"
     
     # Add simple recommendation
     if data:
