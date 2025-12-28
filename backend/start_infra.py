@@ -42,10 +42,10 @@ def main():
     print("🏗️  PHASE 1: DOCKER INFRASTRUCTURE")
     
     # Step 1: Clean slate
-    run_command("Stopping existing containers", "docker-compose down", check=False)
+    run_command("Stopping existing containers", "docker-compose down -v", check=False)
     
     # Step 2: Start services
-    if not run_command("Starting Kafka + PostgreSQL", "docker-compose up -d"):
+    if not run_command("Starting Kafka + PostgreSQL", "docker-compose up -d --force-recreate"):
         print("\n❌ Docker failed to start. Check docker-compose.yml")
         sys.exit(1)
     

@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { storage } from '@/lib/storage';
 import { UploadForm } from '@/components/UploadForm';
@@ -13,6 +14,7 @@ type UploadStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'error';
 
 export default function UploadPage() {
   const router = useRouter();
+  const { refetchSessions } = useSession();
   const [status, setStatus] = useState<UploadStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -92,9 +94,14 @@ export default function UploadPage() {
 
         if (statusData.status === 'completed') {
           setStatus('completed');
-          setTimeout(() => {
-            router.push(`/dashboard?session=${sessionId}`);
-          }, 1500);
+          
+          console.log('🎉 Upload complete, session:', sessionId);
+          console.log('   Calling refetchSessions...');
+          await refetchSessions();
+          console.log('   ✅ refetchSessions done');
+          console.log('   Redirecting to:', `/dashboard?session=${sessionId}`);
+          
+          router.push(`/dashboard?session=${sessionId}`);
           return;
         }
 

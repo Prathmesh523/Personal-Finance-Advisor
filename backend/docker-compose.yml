@@ -1,4 +1,5 @@
 version: '3.8'
+name: finance-advisor
 services:
   # 1. PostgreSQL Database
   postgres:

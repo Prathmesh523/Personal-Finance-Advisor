@@ -17,6 +17,7 @@ interface SessionContextType {
   currentSession: string | null;
   currentSessionMonth: string | null;
   setCurrentSession: (sessionId: string) => void;
+  refetchSessions: () => Promise<void>;
   loading: boolean;
   error: string | null;
 }
@@ -39,54 +40,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     fetchSessions();
   }, []);
 
+  // ✅ SEPARATED: This only fetches sessions, doesn't set current session
   const fetchSessions = async () => {
+    console.log('🔄 fetchSessions called');
     try {
       setLoading(true);
       const data = await api.listSessions();
+      console.log('   📥 Received sessions:', data.sessions);
       
       const completed = data.sessions.filter(s => s.status === 'completed');
       setSessions(completed);
-
-      if (completed.length > 0) {
-        // ✅ Check 3 sources (in priority order)
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionFromUrl = urlParams.get('session');
-        const sessionFromStorage = localStorage.getItem('last_session_id');
-        
-        let sessionToUse;
-        
-        // Priority 1: URL has valid session
-        if (sessionFromUrl && completed.find(s => s.id === sessionFromUrl)) {
-          sessionToUse = sessionFromUrl;
-        } 
-        // Priority 2: localStorage has valid session
-        else if (sessionFromStorage && completed.find(s => s.id === sessionFromStorage)) {
-          sessionToUse = sessionFromStorage;
-        } 
-        // Priority 3: First session
-        else {
-          sessionToUse = completed[0].id;
-        }
-        
-        // ✅ Save to localStorage
-        localStorage.setItem('last_session_id', sessionToUse);
-        
-        // Set state
-        setCurrentSessionState(sessionToUse);
-        const session = completed.find(s => s.id === sessionToUse);
-        if (session) {
-          setCurrentSessionMonth(session.month);
-        }
-        
-        // Sync URL
-        const currentParams = new URLSearchParams(window.location.search);
-        const urlSession = currentParams.get('session');
-        
-        if (urlSession !== sessionToUse) {
-          currentParams.set('session', sessionToUse);
-          router.replace(`${pathname}?${currentParams.toString()}`);
-        }
-      }
+      console.log('   ✅ Set sessions state:', completed);
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sessions');
     } finally {
@@ -94,21 +59,62 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const setCurrentSession = (sessionId: string) => {
-    setCurrentSessionState(sessionId);
+  // ✅ NEW: Separate useEffect that watches URL and sets current session
+  useEffect(() => {
+    if (sessions.length === 0) return;
     
-    // ✅ Save to localStorage
-    localStorage.setItem('last_session_id', sessionId);
+    console.log('🔄 URL/sessions changed, updating current session');
+    console.log('   Current URL:', window.location.href);
+    
+    const sessionFromUrl = searchParams.get('session');
+    console.log('   Session from URL:', sessionFromUrl);
+    
+    let sessionToUse;
+    
+    // Priority 1: URL has valid session
+    if (sessionFromUrl && sessions.find(s => s.id === sessionFromUrl)) {
+      sessionToUse = sessionFromUrl;
+      console.log('   ✅ Using session from URL:', sessionToUse);
+    } 
+    // Priority 2: First session (fallback)
+    else {
+      sessionToUse = sessions[0].id;
+      console.log('   ⚠️  No valid URL session, using first:', sessionToUse);
+    }
+    
+    // Update state
+    setCurrentSessionState(sessionToUse);
+    const session = sessions.find(s => s.id === sessionToUse);
+    if (session) {
+      setCurrentSessionMonth(session.month);
+      console.log('   📅 Set month to:', session.month);
+    }
+    
+    // Sync URL if needed
+    const currentParams = new URLSearchParams(window.location.search);
+    if (currentParams.get('session') !== sessionToUse) {
+      currentParams.set('session', sessionToUse);
+      console.log('   🔗 Syncing URL to:', sessionToUse);
+      router.replace(`${pathname}?${currentParams.toString()}`);
+    }
+  }, [sessions, searchParams, pathname, router]);
+
+  const setCurrentSession = (sessionId: string) => {
+    console.log('🔧 setCurrentSession called with:', sessionId);
+    
+    setCurrentSessionState(sessionId);
     
     const session = sessions.find(s => s.id === sessionId);
     if (session) {
       setCurrentSessionMonth(session.month);
+      console.log('   📅 Set month to:', session.month);
     }
 
-    // Preserve other query params
+    // Update URL (this will trigger the useEffect above)
     const currentParams = new URLSearchParams(window.location.search);
     currentParams.set('session', sessionId);
     
+    console.log('   🔗 Navigating to:', `${pathname}?${currentParams.toString()}`);
     router.push(`${pathname}?${currentParams.toString()}`);
   };
 
@@ -119,6 +125,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         currentSession,
         currentSessionMonth,
         setCurrentSession,
+        refetchSessions: fetchSessions,
         loading,
         error,
       }}

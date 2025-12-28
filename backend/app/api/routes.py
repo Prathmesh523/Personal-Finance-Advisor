@@ -16,6 +16,10 @@ from app.services.analytics import (
     get_category_breakdown,
     get_unlinked_splitwise_payer
 )
+from app.chatbot.intent_classifier import classify_intent
+from app.chatbot.filter_extractor import extract_filters
+from app.chatbot.query_builder import build_query
+from app.chatbot.response_formatter import format_response
 from app.database.connection import get_db_connection
 from datetime import datetime
 from typing import Optional
@@ -1179,5 +1183,64 @@ def get_recommendations(session_id: str, user_id: int = Query(1)):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/chat")
+def chat_query(
+    question: str = Query(..., description="User's question"),
+    user_id: int = Query(1, description="User ID")
+):
+    """
+    Natural language chat interface
+    NO session_id required - queries all data unless month specified
+    """
+    try:
+        
+        # Step 1: Classify intent
+        intent = classify_intent(question)
+        
+        # Step 2: Extract filters (no session_id needed)
+        filters = extract_filters(question, user_id)
+        
+        # Step 3: Build SQL query
+        query_info = build_query(intent, filters)
+        
+        # Step 4: Execute query
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        if query_info:
+            cur.execute(query_info['sql'], query_info['params'])
+            rows = cur.fetchall()
+            
+            data = []
+            for row in rows:
+                row_dict = {col: row[i] for i, col in enumerate(query_info['columns'])}
+                data.append(row_dict)
+            
+            query_info['data'] = data
+        else:
+            query_info = None
+        
+        cur.close()
+        conn.close()
+        
+        # Step 5: Format response
+        response = format_response(intent, query_info, filters, question)
+        
+        return {
+            'question': question,
+            'intent': intent,
+            'filters': filters,
+            'answer': response['answer'],
+            'data': response['data'],
+            'show_table': response['show_table']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     

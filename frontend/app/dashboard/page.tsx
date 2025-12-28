@@ -3,7 +3,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { formatMonth } from '@/lib/utils';
@@ -17,7 +17,9 @@ import { Calendar } from 'lucide-react';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { currentSession, currentSessionMonth, loading: sessionLoading } = useSession();
+  const searchParams = useSearchParams();
+  const sessionFromUrl = searchParams.get('session');  // ✅ Read from URL
+  const { sessions, currentSessionMonth } = useSession();  // ✅ Remove currentSession from here
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,16 +29,27 @@ export default function DashboardPage() {
   const [dailySpending, setDailySpending] = useState<DailySpendingResponse | null>(null);
 
   useEffect(() => {
-    if (!currentSession) return;  // NEW: Wait for session
+    console.log('🔍 Dashboard useEffect triggered');
+    console.log('   sessionFromUrl:', sessionFromUrl);
+    console.log('   sessions array:', sessions);
     
-    fetchDashboardData(currentSession);  // NEW: Use from context
-  }, [currentSession]);
+    if (!sessionFromUrl) {
+      console.log('   ❌ No session in URL, skipping fetch');
+      return;
+    }
+    
+    console.log('   ✅ Fetching data for:', sessionFromUrl);
+    fetchDashboardData(sessionFromUrl);
+  }, [sessionFromUrl]);
 
   const fetchDashboardData = async (sessionId: string) => {
+    console.log('📊 fetchDashboardData called with:', sessionId);
+    
     try {
       setLoading(true);
       setError(null);
 
+      console.log('   🌐 Making API calls...');
       const [metricsData, categoriesData, warningsData, dailyData] = await Promise.all([
         api.getMetrics(sessionId),
         api.getCategoryBreakdown(sessionId),
@@ -44,6 +57,10 @@ export default function DashboardPage() {
         api.getDailySpending(sessionId),
       ]);
 
+      console.log('   ✅ API responses received');
+      console.log('   📈 Metrics:', metricsData);
+      console.log('   📊 Categories:', categoriesData);
+      
       setMetrics(metricsData);
       setCategories(categoriesData);
       setWarnings(warningsData);
