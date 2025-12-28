@@ -6,8 +6,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from '@/lib/session-context';
 import { storage } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Receipt, GitCompare, Upload, Link, Lightbulb} from 'lucide-react';
-import { useEffect, useState } from 'react'; // ✅ ADD THIS
+import { LayoutDashboard, Receipt, GitCompare, Upload, Link, Lightbulb, MessageSquare} from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 export function Sidebar() {
   const router = useRouter();
@@ -34,8 +34,9 @@ export function Sidebar() {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/transactions', label: 'Transactions', icon: Receipt },
-    { path: '/linking', label: 'Link Transactions', icon: Link },  // existing
-    { path: '/recommendations', label: 'Recommendations', icon: Lightbulb },  // NEW
+    { path: '/linking', label: 'Link Transactions', icon: Link }, 
+    { path: '/recommendations', label: 'Recommendations', icon: Lightbulb }, 
+    { path: '/chat', label: 'Chat', icon: MessageSquare },
     { path: '/compare', label: 'Compare', icon: GitCompare },
   ];
 
