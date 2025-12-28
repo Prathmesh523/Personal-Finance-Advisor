@@ -29,7 +29,7 @@ def main():
     print("""
     ╔═══════════════════════════════════════════════════════╗
     ║         INFRASTRUCTURE SETUP - TERMINAL 1            ║
-    ║      Docker + Database + Kafka Consumer              ║
+    ║      Docker + Database + RabbitMQ Consumer           ║
     ╚═══════════════════════════════════════════════════════╝
     """)
     
@@ -45,12 +45,12 @@ def main():
     run_command("Stopping existing containers", "docker-compose down -v", check=False)
     
     # Step 2: Start services
-    if not run_command("Starting Kafka + PostgreSQL", "docker-compose up -d --force-recreate"):
+    if not run_command("Starting RabbitMQ + PostgreSQL", "docker-compose up -d --force-recreate"):
         print("\n❌ Docker failed to start. Check docker-compose.yml")
         sys.exit(1)
     
-    print("\n⏳ Waiting 3 seconds for services to be ready...")
-    for i in range(3, 0, -1):
+    print("\n⏳ Waiting 5 seconds for services to be ready...")
+    for i in range(5, 0, -1):
         print(f"   {i}...", end='\r')
         time.sleep(1)
     print("   ✅ Services ready!          ")
@@ -81,9 +81,9 @@ def main():
             print("✅ Schema exists, skipping creation")
     
     # Step 4: Start consumer
-    print("\n🔄 PHASE 3: KAFKA CONSUMER")
+    print("\n🔄 PHASE 3: RABBITMQ CONSUMER")
     print("="*60)
-    print("⚙️  Starting Kafka Consumer (will run continuously)")
+    print("⚙️  Starting RabbitMQ Consumer (will run continuously)")
     print("="*60)
     print("\n💡 INSTRUCTIONS:")
     print("   1. Keep this terminal running")

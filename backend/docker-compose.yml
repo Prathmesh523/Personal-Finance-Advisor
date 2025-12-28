@@ -13,29 +13,25 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       
-  # 2. Kafka Broker (Official Apache Image)
-  kafka:
-    image: apache/kafka:3.7.0 
+  # 2. RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
     ports:
-      - "9092:9092"
+      - "5672:5672"   # AMQP protocol
+      - "15672:15672" # Management UI
     environment:
-      # KRaft Settings
-      KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      # Single-Node Performance Tunings (Essential for local dev)
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: password
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
     driver: local
-  kafka_data:
+  rabbitmq_data:
     driver: local

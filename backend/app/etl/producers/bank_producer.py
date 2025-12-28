@@ -1,17 +1,19 @@
 import pandas as pd
 import json
 import os
-from confluent_kafka import Producer
+import pika
 from app.etl.parsers import normalize_bank_row
 from app.config import Config
 
-def get_kafka_producer():
-    conf = {'bootstrap.servers': Config.KAFKA_BOOTSTRAP_SERVERS}
-    return Producer(conf)
-
-def delivery_report(err, msg):
-    if err:
-        print(f'❌ Message delivery failed: {err}')
+def get_rabbitmq_connection():
+    """Create RabbitMQ connection"""
+    credentials = pika.PlainCredentials(Config.RABBITMQ_USER, Config.RABBITMQ_PASS)
+    parameters = pika.ConnectionParameters(
+        host=Config.RABBITMQ_HOST,
+        port=Config.RABBITMQ_PORT,
+        credentials=credentials
+    )
+    return pika.BlockingConnection(parameters)
 
 def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
     """
@@ -34,7 +36,9 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
         
         df = pd.read_csv(filepath, skiprows=header_row_index)
         
-        producer = get_kafka_producer()
+        connection = get_rabbitmq_connection()
+        channel = connection.channel()
+        channel.queue_declare(queue=Config.RABBITMQ_QUEUE, durable=True)
         count = 0
         excluded_count = 0
 
@@ -59,18 +63,18 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
                     clean_data['source'] = 'BANK'  # NEW LINE
                     clean_data['upload_session_id'] = session_id
                     
-                    producer.produce(
-                        Config.KAFKA_TOPIC_RAW,
-                        key=str(user_id),
-                        value=json.dumps(clean_data),
-                        callback=delivery_report
+                    channel.basic_publish(
+                        exchange='',
+                        routing_key=Config.RABBITMQ_QUEUE,
+                        body=json.dumps(clean_data),
+                        properties=pika.BasicProperties(delivery_mode=2)  # Persistent
                     )
                     count += 1
                 else:
                     excluded_count += 1
             
-        producer.flush()
-        print(f"🚀 Successfully sent {count} bank transactions.")
+        connection.close()
+        print(f"🚀 Successfully queued {count} bank transactions.")
         
         return {
             "status": "success",

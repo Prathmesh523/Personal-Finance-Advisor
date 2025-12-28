@@ -1,14 +1,16 @@
 import os
 
 class Config:
-    # Kafka Configuration
-    KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-    KAFKA_TOPIC_RAW = "raw_transactions"
+    # RabbitMQ Configuration
+    RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
+    RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", 5672))
+    RABBITMQ_USER = os.getenv("RABBITMQ_USER", "user")
+    RABBITMQ_PASS = os.getenv("RABBITMQ_PASS", "password")
+    RABBITMQ_QUEUE = "transactions_queue"
     
     # Splitwise Configuration
-    # This must match the column name in your CSV exactly
-    SPLITWISE_USER_NAME = "Prathamesh Patil" 
+    SPLITWISE_USER_NAME = "Prathamesh Patil"  # Must match CSV column name
     UPLOAD_SESSION_PREFIX = "session_"
     
     # Date Formats
-    DATE_FORMAT_DB = "%Y-%m-%d"        # Standard ISO format for Postgres
+    DATE_FORMAT_DB = "%Y-%m-%d"  # Standard ISO format for Postgres

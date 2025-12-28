@@ -127,7 +127,7 @@ def main():
     print("\n⚠️  PREREQUISITES (Must be running):")
     print("   1. Docker: docker-compose up -d")
     print("   2. Database: python init_db.py")
-    print("   3. Consumer: python -m app.etl.consumers.data_processor")
+    print("   3. RabbitMQ Consumer: python -m app.etl.consumers.data_processor")
     
     input("\n👉 Press ENTER when ready to proceed...")
     
@@ -154,8 +154,8 @@ def main():
         sys.exit(1)
     
     # Wait for consumer
-    print("\n⏳ Waiting 8 seconds for consumer to process messages...")
-    for i in range(8, 0, -1):
+    print("⏳ Waiting 5 seconds for messages to be processed...")
+    for i in range(5, 0, -1):
         print(f"   {i}...", end='\r')
         time.sleep(1)
     print("   ✅ Consumer should have processed messages")
