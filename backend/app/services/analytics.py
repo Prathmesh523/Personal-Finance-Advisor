@@ -141,12 +141,14 @@ def get_category_breakdown(session_id, user_id=1):
     cur = conn.cursor()
     
     category_totals = {}
+    category_counts = {}  # NEW: Track transaction counts
     
     # 1. Solo expenses (unlinked bank)
     cur.execute("""
         SELECT 
             category,
-            SUM(ABS(amount)) as total_amount
+            SUM(ABS(amount)) as total_amount,
+            COUNT(*) as txn_count
         FROM bank_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
@@ -160,13 +162,16 @@ def get_category_breakdown(session_id, user_id=1):
         raw_category = row[0] or 'Other'
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         amount = float(row[1])
+        count = int(row[2])  # NEW
         category_totals[category] = category_totals.get(category, 0) + amount
+        category_counts[category] = category_counts.get(category, 0) + count  # NEW
     
     # 2. Split expenses (you paid) - use YOUR SHARE
     cur.execute("""
         SELECT 
             category,
-            SUM(my_share) as your_share
+            SUM(my_share) as your_share,
+            COUNT(*) as txn_count
         FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
@@ -179,13 +184,16 @@ def get_category_breakdown(session_id, user_id=1):
         raw_category = row[0] or 'Other'
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         your_share = float(row[1])
+        count = int(row[2])  # NEW
         category_totals[category] = category_totals.get(category, 0) + your_share
+        category_counts[category] = category_counts.get(category, 0) + count  # NEW
     
     # 3. Split expenses (friend paid) - use YOUR SHARE
     cur.execute("""
         SELECT 
             category,
-            SUM(my_share) as your_share
+            SUM(my_share) as your_share,
+            COUNT(*) as txn_count
         FROM splitwise_transactions
         WHERE upload_session_id = %s
           AND user_id = %s
@@ -197,7 +205,9 @@ def get_category_breakdown(session_id, user_id=1):
         raw_category = row[0] or 'Other'
         category = CATEGORY_MAPPING.get(raw_category, raw_category)
         amount = float(row[1])
+        count = int(row[2])  # NEW
         category_totals[category] = category_totals.get(category, 0) + amount
+        category_counts[category] = category_counts.get(category, 0) + count  # NEW
     
     cur.close()
     conn.close()
@@ -215,7 +225,8 @@ def get_category_breakdown(session_id, user_id=1):
         breakdown.append({
             'category': category,
             'amount': round(amount, 2),
-            'percentage': round(percentage, 1)
+            'percentage': round(percentage, 1),
+            'count': category_counts.get(category, 0)  # NEW
         })
     
     # Sort by amount descending

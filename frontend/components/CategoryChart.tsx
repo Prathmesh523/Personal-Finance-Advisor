@@ -56,17 +56,17 @@ export function CategoryChart({ categories }: CategoryChartProps) {
         <CardTitle>Spending by Category</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex flex-col md:flex-row gap-6 items-center">
-          {/* Pie Chart - Left */}
-          <div className="w-full md:w-2/5 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height={300}>
+        <div className="flex flex-col gap-6">
+          {/* Pie Chart - Top/Center */}
+          <div className="w-full flex items-center justify-center">
+            <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
                   data={chartData}
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  outerRadius={100}
+                  outerRadius={110}
                   fill="#8884d8"
                   dataKey="value"
                 >
@@ -79,23 +79,26 @@ export function CategoryChart({ categories }: CategoryChartProps) {
             </ResponsiveContainer>
           </div>
 
-          {/* Legend Grid - Right (2 columns) */}
-          <div className="w-full md:w-3/5 grid grid-cols-2 gap-3">
+          {/* Legend Grid - Bottom (3 columns on desktop, 2 on tablet, 1 on mobile) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {chartData.map((entry, index) => (
               <div
                 key={index}
                 className="flex items-center gap-2 p-2 rounded hover:bg-gray-50"
               >
                 <div
-                  className="w-6 h-6 rounded flex-shrink-0"
+                  className="w-5 h-5 rounded flex-shrink-0"
                   style={{ backgroundColor: COLORS[index % COLORS.length] }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-s font-medium text-gray-700 truncate">
+                  <p className="text-sm font-medium text-gray-700 truncate">
                     {entry.name}
                   </p>
                   <p className="text-xs text-gray-500">
-                    ₹{(entry.value / 1000).toFixed(0)}k
+                    {entry.value >= 1000 
+                      ? `₹${(entry.value / 1000).toFixed(0)}k`
+                      : `₹${Math.round(entry.value)}`
+                    }
                   </p>
                 </div>
               </div>
