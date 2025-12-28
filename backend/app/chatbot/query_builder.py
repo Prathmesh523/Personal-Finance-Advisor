@@ -15,7 +15,7 @@ def build_query(intent: str, filters: dict) -> dict:
         }
     """
     
-    session_id = filters.get('session_id')
+    user_id = filters.get('user_id')
     category = filters.get('category')
     month = filters.get('month')
     min_amount = filters.get('min_amount')
@@ -23,8 +23,8 @@ def build_query(intent: str, filters: dict) -> dict:
     keyword = filters.get('description_keyword')
     
     # Base WHERE clause (always filter by session)
-    where_clauses = ["upload_session_id = %s"]
-    params = [session_id]
+    where_clauses = ["user_id = %s"]
+    params = [user_id]
     
     # Add category filter
     if category:
@@ -79,8 +79,8 @@ def build_query(intent: str, filters: dict) -> dict:
                 category,
                 'SPLITWISE' as source
             FROM splitwise_transactions
-            WHERE {where_sql}
-              AND role IN ('PAYER', 'BORROWER')
+            WHERE {where_sql.replace('ABS(amount)', 'my_share')}
+                AND role IN ('PAYER', 'BORROWER')
             
             ORDER BY date DESC
             LIMIT 50
@@ -118,8 +118,8 @@ def build_query(intent: str, filters: dict) -> dict:
                 
                 SELECT -my_share as amount, date
                 FROM splitwise_transactions
-                WHERE {where_sql}
-                  AND role IN ('PAYER', 'BORROWER')
+                WHERE {where_sql.replace('ABS(amount)', 'my_share')}
+                    AND role IN ('PAYER', 'BORROWER')
             ) combined
         """
         
@@ -136,32 +136,49 @@ def build_query(intent: str, filters: dict) -> dict:
         }
     
     elif intent == "RECOMMENDATION":
-        # For recommendations, we need category breakdown
+        # For recommendations, use category breakdown
+        # BUT respect filters if provided (e.g., "Why is my food spending high?")
+        
+        # Build WHERE clause with filters
+        rec_where = ["user_id = %s"]
+        rec_params = [user_id]
+        
+        if category:
+            rec_where.append("category = %s")
+            rec_params.append(category)
+        
+        if month:
+            rec_where.append("DATE_TRUNC('month', date) = %s::date")
+            rec_params.append(f"{month}-01")
+        
+        rec_where_sql = " AND ".join(rec_where)
+        
         sql = f"""
             SELECT 
                 category,
                 COUNT(*) as transaction_count,
                 SUM(amount) as total_spent
             FROM (
-                SELECT category, ABS(amount) as amount
+                SELECT category, ABS(amount) as amount, date
                 FROM bank_transactions
-                WHERE upload_session_id = %s
-                  AND amount < 0
-                  AND status != 'TRANSFER'
+                WHERE {rec_where_sql}
+                AND amount < 0
+                AND status != 'TRANSFER'
                 
                 UNION ALL
                 
-                SELECT category, my_share as amount
+                SELECT category, my_share as amount, date
                 FROM splitwise_transactions
-                WHERE upload_session_id = %s
-                  AND role IN ('PAYER', 'BORROWER')
+                WHERE {rec_where_sql}
+                AND role IN ('PAYER', 'BORROWER')
             ) combined
             GROUP BY category
             ORDER BY total_spent DESC
             LIMIT 5
         """
         
-        params = [session_id, session_id]  # Only session filter for recommendations
+        # Double params for UNION
+        params = rec_params + rec_params
         
         columns = ['category', 'transaction_count', 'total_spent']
         
@@ -171,7 +188,7 @@ def build_query(intent: str, filters: dict) -> dict:
             'columns': columns,
             'result_type': 'category_breakdown'
         }
-    
+
     else:
         # AMBIGUOUS - return None (will be handled by response formatter)
         return None

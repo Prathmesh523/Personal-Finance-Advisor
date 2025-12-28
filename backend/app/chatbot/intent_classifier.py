@@ -25,17 +25,33 @@ def classify_intent(question: str) -> IntentType:
     
     prompt = f"""You are a financial query classifier.
 
-ANALYSIS: Questions asking for calculations, totals, averages, comparisons
-Examples: 'How much did I spend?', 'What's my average spending?', 'Compare September and October'
+ANALYSIS: Questions asking for calculations, totals, averages, comparisons, amounts spent
+PRIORITY KEYWORDS (if ANY of these present → ANALYSIS): "how much", "total", "spent", "spending", "average", "cost", "expense"
+Examples: 
+- 'How much did I spend on food?'
+- 'What's my average transaction amount?'
+- 'Total spending on entertainment?'
+- 'How much did I spend on food and transport?'
 
-HISTORY: Questions asking to list/show specific transactions
-Examples: 'Show me food transactions', 'List all Swiggy orders', 'Find transactions above ₹5000'
+HISTORY: Questions asking to list/show/find specific transactions or purchases
+Keywords: "show", "list", "find", "display", "buy", "bought", "purchase", "what did i"
+Examples: 
+- 'Show me food transactions'
+- 'List Swiggy orders'
+- 'What did I buy in March?'
+- 'Find transactions above ₹5000'
 
-RECOMMENDATION: Questions asking for advice or insights
-Examples: 'How can I save money?', 'What should I focus on?', 'Why did I overspend?'
+RECOMMENDATION: Questions asking for advice, insights, or suggestions
+Keywords: "save", "reduce", "advice", "why", "should", "recommend", "overspend", "cut back", "insight"
+Examples: 
+- 'How can I save money?'
+- 'What should I focus on?'
+- 'Why did I overspend?'
 
 AMBIGUOUS: Question is unclear or doesn't fit above categories
 Examples: 'What about that?', 'More details', 'Huh?'
+
+IMPORTANT: If the question contains "how much", "total", "spent", "spending", or "average", it is ALWAYS ANALYSIS, NOT RECOMMENDATION.
 
 Classify this question: '{question}'
 

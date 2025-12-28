@@ -69,7 +69,7 @@ def extract_month_rules(question: str) -> str:
     # Find month name
     for month_name, month_num in month_map.items():
         if month_name in q:
-            return f"2024-{month_num}"
+            return f"2025-{month_num}"
     
     # Check for YYYY-MM format
     match = re.search(r'(202[0-9])[-/](0[1-9]|1[0-2])', q)
@@ -81,39 +81,49 @@ def extract_month_rules(question: str) -> str:
 
 def extract_amounts_rules(question: str) -> tuple:
     """Extract min/max amounts using regex"""
-    q = question.lower()
+    # ❌ OLD: q = question.lower()
+    # ✅ NEW: Keep original case for regex matching
+    q = question  # Don't lowercase yet
+    
+    print(f"🔍 DEBUG extract_amounts_rules:")
+    print(f"   Input: {question}")
+    print(f"   Processing: {q}")
     
     min_amt = None
     max_amt = None
     
     # Pattern: "above/more than/over ₹5000" or "above 5000"
-    # Handle: ₹5000, ₹ 5000, Rs 5000, Rs. 5000, 5000
-    match = re.search(r'(above|more than|over|greater than|>\s*)(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)', q)
+    # Use case-insensitive flag
+    match = re.search(r'(above|more than|over|greater than)\s*(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)', q, re.IGNORECASE)
+    print(f"   'above' regex match: {match}")
     if match:
         min_amt = float(match.group(2).replace(',', ''))
+        print(f"   ✅ Extracted min_amt: {min_amt}")
     
     # Pattern: "below/less than/under ₹500"
-    match = re.search(r'(below|less than|under|<\s*)(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)', q)
+    match = re.search(r'(below|less than|under)\s*(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)', q, re.IGNORECASE)
+    print(f"   'below' regex match: {match}")
     if match:
         max_amt = float(match.group(2).replace(',', ''))
+        print(f"   ✅ Extracted max_amt: {max_amt}")
     
     # Pattern: "between ₹1000 and ₹3000"
-    match = re.search(r'between\s*(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)\s*(?:and|to|-)\s*(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)', q)
+    match = re.search(r'between\s*(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)\s*(?:and|to|-)\s*(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)', q, re.IGNORECASE)
     if match:
         min_amt = float(match.group(1).replace(',', ''))
         max_amt = float(match.group(2).replace(',', ''))
     
     # Pattern: "₹1000-₹3000" or "1000-3000" (only if not already matched)
     if not min_amt and not max_amt:
-        match = re.search(r'(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)\s*-\s*(?:₹|rs\.?|inr)?\s*(\d+(?:,\d{3})*)', q)
+        match = re.search(r'(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)\s*-\s*(?:₹|rs\.?\s*)?(\d+(?:,\d{3})*)', q)
         if match:
-            # Ensure it's an amount range, not a date (avoid matching 2024-10)
             num1 = float(match.group(1).replace(',', ''))
             num2 = float(match.group(2).replace(',', ''))
-            # Only treat as amount if both numbers > 100 (to avoid date confusion)
             if num1 > 100 or num2 > 100:
                 min_amt = num1
                 max_amt = num2
+    
+    print(f"   Final: min={min_amt}, max={max_amt}")
     
     return min_amt, max_amt
 
@@ -175,7 +185,7 @@ def extract_filters(question: str, session_id: str) -> dict:
             "min_amount": min_amt,
             "max_amount": max_amt,
             "description_keyword": keyword,
-            "session_id": session_id
+            "user_id": session_id
         }
 
 
