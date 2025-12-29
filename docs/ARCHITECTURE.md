@@ -603,7 +603,7 @@ Interactive API docs available at `http://localhost:8000/docs` (Swagger UI) - au
 - No event replay needed - data persisted in PostgreSQL
 - Complex operations - ZooKeeper, partitions, replication
 
-**Migration to RabbitMQ (v1.5):**
+**Migration to RabbitMQ (v2.0):**
 
 | Factor | Kafka | RabbitMQ | Winner |
 |--------|-------|----------|--------|
