@@ -12,7 +12,7 @@ DB_CONFIG = {
 
 def get_db_connection():
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(**DB_CONFIG, connect_timeout=10)
         return conn
     except Exception as e:
         print(f"❌ Database connection failed: {e}")

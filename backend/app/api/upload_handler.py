@@ -7,6 +7,9 @@ from app.etl.producers.bank_producer import process_bank_file
 from app.etl.producers.splitwise_producer import process_splitwise_file
 from app.services.linker import run_full_pipeline
 from app.database.connection import get_db_connection
+from app.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 # Directory for uploaded files
 UPLOAD_DIR = Path("data/raw_uploads")
@@ -41,10 +44,10 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
     This function runs in a separate thread
     """
     try:
-        print(f"🚀 Starting analysis for session: {session_id}")
+        logger.info(f"🚀 Starting analysis for session: {session_id}")
         
         # Step 1: Process bank file
-        print("📥 Processing bank file...")
+        logger.info("📥 Processing bank file...")
         bank_result = process_bank_file(bank_filepath, session_id, start_date, end_date)
         
         if bank_result['status'] == 'error':
@@ -52,7 +55,7 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
             return
         
         # Step 2: Process splitwise file
-        print("📥 Processing splitwise file...")
+        logger.info("📥 Processing splitwise file...")
         splitwise_result = process_splitwise_file(splitwise_filepath, session_id, start_date, end_date)
         
         if splitwise_result['status'] == 'error':
@@ -60,7 +63,7 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
             return
         
         # Step 3: Wait for consumer to process (Kafka messages)
-        print("⏳ Waiting for messages to be processed...")
+        logger.info("⏳ Waiting for messages to be processed...")
         import time
         time.sleep(8)  # Give consumer time to process
         
@@ -69,18 +72,18 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
         splitwise_count = splitwise_result['processed']
         skipped_not_involved = splitwise_result.get('skipped_not_involved', 0)  # ✅ NEW
 
-        print(f"✅ Processed: {bank_count} bank, {splitwise_count} splitwise")
+        logger.info(f"✅ Processed: {bank_count} bank, {splitwise_count} splitwise")
         if skipped_not_involved > 0:
-            print(f"⏭️  Skipped: {skipped_not_involved} splitwise (not involved)")  # ✅ NEW
+            logger.info(f"⏭️  Skipped: {skipped_not_involved} splitwise (not involved)")  # ✅ NEW
 
         update_session_counts(session_id, bank_count, splitwise_count, 0, skipped_not_involved)  # ✅ Updated
         
         # Step 5: Run analysis pipeline (linking, categorization)
-        print("🧠 Running analysis pipeline...")
+        logger.info("🧠 Running analysis pipeline...")
         run_full_pipeline(session_id)
         
         # Step 6: Mark as completed
-        print(f"✅ Analysis complete for session: {session_id}")
+        logger.info(f"✅ Analysis complete for session: {session_id}")
         update_session_status(session_id, 'completed')
         
         # Optional: Clean up files
@@ -88,7 +91,7 @@ def run_analysis_pipeline(session_id: str, bank_filepath: str, splitwise_filepat
         # os.remove(splitwise_filepath)
         
     except Exception as e:
-        print(f"❌ Analysis failed for session {session_id}: {e}")
+        logger.error(f"❌ Analysis failed for session {session_id}: {e}")
         import traceback
         traceback.print_exc()
         update_session_status(session_id, 'failed', str(e))

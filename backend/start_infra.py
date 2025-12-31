@@ -37,7 +37,7 @@ def main():
         print("⚠️  RESET MODE: Will drop all tables and recreate schema\n")
     else:
         print("ℹ️  NORMAL MODE: Using existing schema\n")
-        print("💡 To reset schema, run: python start_infra.py --reset\n")
+        print("💡 To reset schema, run: python3 start_infra.py --reset\n")
     
     print("🏗️  PHASE 1: DOCKER INFRASTRUCTURE")
     
@@ -60,21 +60,21 @@ def main():
     
     if reset_mode:
         # Reset schema (drop + recreate)
-        if not run_command("Resetting database schema", "python reset_schema.py"):
+        if not run_command("Resetting database schema", "python3 reset_schema.py"):
             print("\n❌ Schema reset failed")
             sys.exit(1)
     else:
         # Check if tables exist, if not create them
         print("Checking if schema exists...")
         result = subprocess.run(
-            "python -c \"from app.database.connection import get_db_connection; conn = get_db_connection(); cur = conn.cursor(); cur.execute('SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN (\\\"bank_transactions\\\", \\\"splitwise_transactions\\\")'); count = cur.fetchone()[0]; cur.close(); conn.close(); exit(0 if count == 2 else 1)\"",
+            "python3 -c \"from app.database.connection import get_db_connection; conn = get_db_connection(); cur = conn.cursor(); cur.execute('SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN (\\\"bank_transactions\\\", \\\"splitwise_transactions\\\")'); count = cur.fetchone()[0]; cur.close(); conn.close(); exit(0 if count == 2 else 1)\"",
             shell=True,
             capture_output=True
         )
         
         if result.returncode != 0:
             print("Schema not found, creating...")
-            if not run_command("Creating database schema", "python reset_schema.py"):
+            if not run_command("Creating database schema", "python3 reset_schema.py"):
                 print("\n❌ Schema creation failed")
                 sys.exit(1)
         else:
@@ -88,7 +88,7 @@ def main():
     print("\n💡 INSTRUCTIONS:")
     print("   1. Keep this terminal running")
     print("   2. Open a NEW terminal (Terminal 2)")
-    print("   3. Run: python run_analysis.py")
+    print("   3. Run: python3 run_analysis.py")
     print("   4. Watch messages appear below")
     print("   5. After analysis completes, press Ctrl+C here to stop\n")
     print("="*60)
@@ -97,14 +97,14 @@ def main():
     
     try:
         # Run consumer (will block until Ctrl+C)
-        subprocess.run("python -m app.etl.consumers.data_processor", shell=True)
+        subprocess.run("python3 -m app.etl.consumers.data_processor", shell=True)
     except KeyboardInterrupt:
         print("\n\n" + "="*60)
         print("🛑 CONSUMER STOPPED")
         print("="*60)
         print("\n💡 To restart:")
-        print("   Normal mode: python start_infra.py")
-        print("   Reset mode:  python start_infra.py --reset")
+        print("   Normal mode: python3 start_infra.py")
+        print("   Reset mode:  python3 start_infra.py --reset")
         print()
 
 if __name__ == "__main__":

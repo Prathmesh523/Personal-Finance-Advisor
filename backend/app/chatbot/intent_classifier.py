@@ -70,7 +70,7 @@ Answer with ONLY the category name (ANALYSIS, HISTORY, RECOMMENDATION, or AMBIGU
                     "num_predict": 20    # We only need 1 word
                 }
             },
-            timeout=10
+            timeout=30
         )
         
         response.raise_for_status()

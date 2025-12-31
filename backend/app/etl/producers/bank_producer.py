@@ -4,6 +4,9 @@ import os
 import pika
 from app.etl.parsers import normalize_bank_row
 from app.config import Config
+from app.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 def get_rabbitmq_connection():
     """Create RabbitMQ connection"""
@@ -22,7 +25,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
     - start_date: Start of selected month
     - end_date: End of selected month
     """
-    print(f"📂 Processing Bank File: {filepath}")
+    logger.info(f"Processing Bank File: {filepath}")
     
     try:
         # 1. Header Detection
@@ -31,7 +34,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
             for i, line in enumerate(f):
                 if "Date" in line and "Narration" in line and "Withdrawal Amt." in line:
                     header_row_index = i
-                    print(f"🎯 Found Header at Row: {i}")
+                    logger.info(f"Found header at row {i}")
                     break
         
         df = pd.read_csv(filepath, skiprows=header_row_index)
@@ -47,7 +50,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
             
             # Stop Conditions
             if "End Of Statement" in raw_date or "STATEMENT SUMMARY" in raw_date:
-                print("🛑 Reached End of Statement. Stopping.")
+                logger.info("Reached end of statement")
                 break
             
             if "*" in raw_date or pd.isna(row['Date']) or raw_date.strip() == "":
@@ -74,7 +77,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
                     excluded_count += 1
             
         connection.close()
-        print(f"🚀 Successfully queued {count} bank transactions.")
+        logger.info(f"Successfully queued {count} bank transactions")
         
         return {
             "status": "success",
@@ -83,7 +86,7 @@ def process_bank_file(filepath, session_id, start_date, end_date, user_id=1):
         }
 
     except Exception as e:
-        print(f"❌ Failed to process file: {e}")
+        logger.error(f"Failed to process file: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

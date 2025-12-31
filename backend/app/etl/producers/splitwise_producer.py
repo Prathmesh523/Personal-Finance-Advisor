@@ -4,6 +4,9 @@ import os
 import pika
 from app.etl.parsers import normalize_splitwise_row
 from app.config import Config
+from app.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 def get_rabbitmq_connection():
     """Create RabbitMQ connection"""
@@ -19,7 +22,7 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
     """
     Process splitwise file with skip tracking
     """
-    print(f"📂 Processing Splitwise File: {filepath}")
+    logger.info(f"📂 Processing Splitwise File: {filepath}")
     
     try:
         # Header detection (same as before)
@@ -45,11 +48,11 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
 
             # Stop conditions (same as before)
             if "Total balance" in description:
-                print("🛑 Reached 'Total balance' footer. Stopping.")
+                logger.info("🛑 Reached 'Total balance' footer. Stopping.")
                 break
             
             if pd.isna(row['Date']) or raw_date == '' or raw_date.lower() == 'nan':
-                print("🛑 Reached empty row. Stopping.")
+                logger.info("🛑 Reached empty row. Stopping.")
                 break
 
             clean_data = normalize_splitwise_row(row, user_id)
@@ -79,8 +82,8 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
                     excluded_count += 1
         
         connection.close()
-        print(f"🚀 Successfully queued {count} Splitwise transactions.")
-        print(f"⏭️  Skipped {skipped_not_involved} transactions (not involved)")  # ✅ NEW
+        logger.info(f"🚀 Successfully queued {count} Splitwise transactions.")
+        logger.info(f"⏭️  Skipped {skipped_not_involved} transactions (not involved)")  # ✅ NEW
         
         return {
             "status": "success",
@@ -90,7 +93,7 @@ def process_splitwise_file(filepath, session_id, start_date, end_date, user_id=1
         }
 
     except Exception as e:
-        print(f"❌ Failed to process file: {e}")
+        logger.error(f"❌ Failed to process file: {e}")
         return {"status": "error", "message": str(e)}
     
 if __name__ == "__main__":
