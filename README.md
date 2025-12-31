@@ -172,18 +172,38 @@ User Question → Intent Classification → Filter Extraction → SQL Query Buil
 - Node.js 20+
 - [Ollama](https://ollama.ai/) (for AI chatbot)
 
-### 1. Clone & Setup Backend
+### 1. Clone the Repo
 ```bash
 git clone https://github.com/yourusername/finance-advisor.git
-cd finance-advisor/backend
+cd finance-advisor
+```
 
-# Install dependencies
+### Backend Setup (Requires 2 Terminals)
+
+#### Terminal 1 — Start Infrastructure
+Starts PostgreSQL, RabbitMQ, and background consumers using Docker Compose (wrapped inside `start_infra.py`).
+```bash
+cd backend
+
+python3 -m venv venv
+source venv/bin/activate   # macOS/Linux
+# .\venv\Scripts\activate  # Windows
+
 pip install -r requirements.txt
 
-# Start infrastructure (RabbitMQ + PostgreSQL + Consumer)
 python start_infra.py
 
 # Keep this terminal running (Ctrl+C to stop)
+```
+
+#### Terminal 2 — Start FastAPI Server
+```bash
+
+cd backend
+source venv/bin/activate   # macOS/Linux
+# .\venv\Scripts\activate  # Windows
+
+uvicorn app.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### 2. Setup Ollama (AI Chatbot)
